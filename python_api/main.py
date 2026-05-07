@@ -42,7 +42,8 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1",
     "https://flip-game-eta.vercel.app",
     "https://flip-game.vercel.app",
-    os.getenv("FRONTEND_URL", ""),  # Set this in Render env vars
+    "https://flip-game-live.vercel.app",
+    os.getenv("FRONTEND_URL", ""),  # Set this in Railway env vars
 ]
 ALLOWED_ORIGINS = [o for o in ALLOWED_ORIGINS if o]  # remove empty strings
 
