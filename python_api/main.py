@@ -43,6 +43,7 @@ ALLOWED_ORIGINS = [
     "https://flip-game-eta.vercel.app",
     "https://flip-game.vercel.app",
     "https://flip-game-live.vercel.app",
+    "https://endearing-optimism-production-6a15.up.railway.app",
     os.getenv("FRONTEND_URL", ""),  # Set this in Railway env vars
 ]
 ALLOWED_ORIGINS = [o for o in ALLOWED_ORIGINS if o]  # remove empty strings
