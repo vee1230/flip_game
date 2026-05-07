@@ -1,0 +1,5 @@
+[build]
+buildCommand = "pip install -r python_api/requirements.txt"
+
+[deploy]
+startCommand = "cd python_api && uvicorn main:app --host 0.0.0.0 --port $PORT"

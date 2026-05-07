@@ -1,0 +1,26 @@
+# Environment variables (NEVER upload to GitHub!)
+.env
+.env.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+python_api/__pycache__/
+python_api/routers/__pycache__/
+python_api/models/__pycache__/
+python_api/ml/__pycache__/
+python_api/utils/__pycache__/
+
+# Node modules
+node_modules/
+
+# Vite build output
+dist/
+
+# Scratch files
+scratch/
+
+# OS files
+.DS_Store
+Thumbs.db

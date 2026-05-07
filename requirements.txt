@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pymysql
+python-dotenv
+pydantic
+httpx
+scikit-learn
+numpy
+pandas
+requests
+websockets>=12.0

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Memory Match</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/admin.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Admin<span>Panel</span></h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#overview"    class="nav-item active" onclick="switchTab('overview')">Dashboard</a>
+                <a href="#users"       class="nav-item" onclick="switchTab('users')">Users</a>
+                <a href="#leaderboard" class="nav-item" onclick="switchTab('leaderboard')">Leaderboard</a>
+                <a href="#analytics"   class="nav-item" onclick="switchTab('analytics')">Analytics</a>
+                <a href="#settings"    class="nav-item" onclick="switchTab('settings')">Settings</a>
+                <a href="javascript:void(0)" class="nav-item logout-btn" onclick="confirmLogout()">Logout</a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <button class="mobile-toggle" id="sidebar-toggle">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6"  x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+                <h1>Welcome, Admin</h1>
+            </header>
+
+            <!-- Overview Section -->
+            <section id="overview" class="tab-content active">
+                <div class="cards-grid">
+                    <div class="stat-card"><h3>Total Users</h3><p class="stat-value" id="stat-total-users">0</p></div>
+                    <div class="stat-card"><h3>Games Played</h3><p class="stat-value" id="stat-total-games">0</p></div>
+                    <div class="stat-card"><h3>Highest Score</h3><p class="stat-value" id="stat-max-score">0</p></div>
+                    <div class="stat-card"><h3>Active Players</h3><p class="stat-value" id="stat-active-users">0</p></div>
+                    <div class="stat-card"><h3>Total Trophies</h3><p class="stat-value" id="stat-total-trophies" style="color:#fbbf24;">0</p></div>
+                </div>
+                <div class="recent-activities">
+                    <h2>Recent Activity</h2>
+                    <div class="table-responsive">
+                        <table class="data-table" id="activities-table">
+                            <thead><tr><th>Player</th><th>Action</th><th>Details</th><th>Date</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Users Section -->
+            <section id="users" class="tab-content">
+                <h2>Registered Users</h2>
+                <div class="table-responsive">
+                    <table class="data-table" id="users-table">
+                        <thead><tr><th>Display Name</th><th>Username</th><th>Account Type</th><th>Status</th><th>🏆 Trophies</th><th>Registered</th><th>Action</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Leaderboard Section -->
+            <section id="leaderboard" class="tab-content">
+                <h2>High Scores Leaderboard</h2>
+                
+                <!-- Summary Cards -->
+                <div class="cards-grid" id="leaderboard-summary">
+                    <div class="stat-card">
+                        <h3>Highest Score</h3>
+                        <p class="stat-value" id="lb-highest-score">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Top Player</h3>
+                        <p class="stat-value" id="lb-top-player" style="font-size:14px;">—</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Fastest Time</h3>
+                        <p class="stat-value" id="lb-fastest-time">0s</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Most Played Theme</h3>
+                        <p class="stat-value" id="lb-most-theme" style="font-size:14px;">—</p>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div style="display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; align-items: center;">
+                    <select id="lb-filter-stage" style="padding:10px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:10px; color:#f8fafc; font-family:'Outfit',sans-serif; font-size:13px; outline:none; cursor:pointer;">
+                        <option value="">All Stages</option>
+                    </select>
+                    <select id="lb-filter-theme" style="padding:10px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:10px; color:#f8fafc; font-family:'Outfit',sans-serif; font-size:13px; outline:none; cursor:pointer;">
+                        <option value="">All Themes</option>
+                    </select>
+                    <input type="text" id="lb-filter-player" placeholder="Search player..." style="padding:10px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:10px; color:#f8fafc; font-family:'Outfit',sans-serif; font-size:13px; outline:none;">
+                    <button onclick="resetLeaderboardFilters()" style="padding:10px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:10px; color:#cbd5e1; font-family:'Outfit',sans-serif; font-size:13px; cursor:pointer; transition:0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">Reset</button>
+                    <button onclick="loadLeaderboard()" style="padding:10px 14px; background:linear-gradient(135deg,#7c3aed,#06b6d4); border:none; border-radius:10px; color:#fff; font-family:'Outfit',sans-serif; font-size:13px; cursor:pointer; font-weight:700;">Apply Filters</button>
+                </div>
+
+                <!-- Table -->
+                <div class="table-responsive">
+                    <div id="leaderboard-empty-state" style="display:none; text-align:center; padding:60px 20px; color:#94a3b8;">
+                        <p style="font-size:16px; margin-bottom:8px;">📊 No leaderboard data available</p>
+                        <p style="font-size:13px;">Players haven't recorded any scores yet. Data will appear here once games are played.</p>
+                    </div>
+                    <table class="data-table" id="leaderboard-table" style="display:none;">
+                        <thead>
+                            <tr>
+                                <th style="width:60px;">Rank</th>
+                                <th>Player Name</th>
+                                <th style="width:100px;">Username</th>
+                                <th style="width:90px;">Score</th>
+                                <th style="width:100px;">Stage</th>
+                                <th style="width:100px;">Theme</th>
+                                <th style="width:110px;">Time</th>
+                                <th style="width:90px;">Moves</th>
+                                <th style="width:130px;">Date Achieved</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Analytics Section -->
+            <section id="analytics" class="tab-content">
+                <h2>Analytics</h2>
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3>Difficulties Played</h3>
+                        <div class="chart-container"><canvas id="difficultyChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Most Used Themes</h3>
+                        <div class="chart-container"><canvas id="themeChart"></canvas></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings" class="tab-content">
+                <h2>Admin Settings</h2>
+                <div class="settings-card">
+                    <h3>Manage Announcements</h3>
+                    <div class="input-group">
+                        <input type="text" class="auth-input" placeholder="Enter new announcement text...">
+                    </div>
+                    <button class="btn-primary" onclick="updateAnnouncement()">Update Announcement</button>
+                    <hr class="divider">
+                    <h3>Machine Learning</h3>
+                    <div id="ml-status-box" style="padding:16px; background:rgba(255,255,255,0.04); border-radius:12px; margin-bottom:16px;">
+                        <p style="font-size:13px; color:#94a3b8; margin-bottom:8px;">Models Status: <span id="ml-models-status" style="color:#10b981;">Checking...</span></p>
+                        <button class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size:13px; padding:10px 16px;" onclick="retrainMLModels()">Retrain Models with DB Data</button>
+                    </div>
+                    <hr class="divider">
+                    <h3>Danger Zone</h3>
+                    <button class="btn-primary" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="resetLeaderboard()">Reset Leaderboard</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="edit-modal-overlay" onclick="closeEditModal()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; backdrop-filter:blur(4px);"></div>
+    <div id="edit-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:2001; background:linear-gradient(135deg,#0f0c29,#302b63); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:32px; width:90%; max-width:440px; box-shadow:0 20px 60px rgba(0,0,0,0.6);">
+        <h2 style="margin-bottom:24px; font-size:20px;">Edit User</h2>
+        <input type="hidden" id="edit-id">
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">Display Name</label>
+            <input id="edit-name" type="text" style="width:100%; padding:12px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:12px; color:#f8fafc; font-family:'Outfit',sans-serif; font-size:14px; outline:none;">
+        </div>
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">Username</label>
+            <input id="edit-username" type="text" style="width:100%; padding:12px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:12px; color:#f8fafc; font-family:'Outfit',sans-serif; font-size:14px; outline:none;">
+        </div>
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">Email</label>
+            <input id="edit-email" type="email" style="width:100%; padding:12px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:12px; color:#f8fafc; font-family:'Outfit',sans-serif; font-size:14px; outline:none;">
+        </div>
+        <div style="margin-bottom:24px;">
+            <label style="font-size:12px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">Status</label>
+            <select id="edit-status" style="width:100%; padding:12px 14px; background:rgba(255,255,255,0.06); border:1.5px solid rgba(255,255,255,0.1); border-radius:12px; color:#f8fafc; font-family:'Outfit',sans-serif; font-size:14px; outline:none;">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Banned">Banned</option>
+            </select>
+        </div>
+        <div id="edit-error" style="font-size:13px; color:#f87171; margin-bottom:12px;"></div>
+        <div style="display:flex; gap:12px;">
+            <button onclick="saveUserEdit()" style="flex:1; padding:14px; background:linear-gradient(135deg,#7c3aed,#06b6d4); border:none; border-radius:12px; color:#fff; font-family:'Outfit',sans-serif; font-size:15px; font-weight:700; cursor:pointer;">Save Changes</button>
+            <button onclick="closeEditModal()" style="padding:14px 20px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:12px; color:#cbd5e1; font-family:'Outfit',sans-serif; font-size:15px; cursor:pointer;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Logout Confirm Modal -->
+    <div id="logout-modal-overlay" onclick="closeLogoutModal()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; backdrop-filter:blur(4px);"></div>
+    <div id="logout-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:2001; background:linear-gradient(135deg,#0f0c29,#302b63); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:32px; width:90%; max-width:400px; box-shadow:0 20px 60px rgba(0,0,0,0.6); text-align:center;">
+        <h2 style="margin-bottom:12px; font-size:22px; color:#f8fafc;">Log Out?</h2>
+        <p style="color:#94a3b8; font-size:14px; margin-bottom:24px; line-height:1.5;">Are you sure you want to log out from the Admin Dashboard? You will be returned to the main game screen.</p>
+        <div style="display:flex; gap:12px; justify-content:center;">
+            <button onclick="closeLogoutModal()" style="flex:1; padding:14px 20px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:12px; color:#cbd5e1; font-family:'Outfit',sans-serif; font-size:15px; cursor:pointer;">Cancel</button>
+            <button onclick="confirmDoLogout()" style="flex:1; padding:14px; background:linear-gradient(135deg,#ef4444,#dc2626); border:none; border-radius:12px; color:#fff; font-family:'Outfit',sans-serif; font-size:15px; font-weight:700; cursor:pointer;">Log Out</button>
+        </div>
+    </div>
+
+    <script src="js/admin.js"></script>
+</body>
+</html>

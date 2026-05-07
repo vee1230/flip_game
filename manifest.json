@@ -1,0 +1,27 @@
+{
+  "name": "Memory Match Puzzle",
+  "short_name": "MemoryMatch",
+  "description": "A fun card-matching memory game for all ages! Flip cards, find pairs, and beat the clock.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0f0c29",
+  "background_color": "#0f0c29",
+  "lang": "en",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "./assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

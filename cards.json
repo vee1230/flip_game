@@ -1,0 +1,106 @@
+{
+  "themes": {
+    "animals": {
+      "name": "Animals",
+      "emoji": "🐾",
+      "cards": [
+        { "id": 1, "symbol": "🦁", "name": "Lion" },
+        { "id": 2, "symbol": "🐘", "name": "Elephant" },
+        { "id": 3, "symbol": "🦊", "name": "Fox" },
+        { "id": 4, "symbol": "🐬", "name": "Dolphin" },
+        { "id": 5, "symbol": "🦋", "name": "Butterfly" },
+        { "id": 6, "symbol": "🐢", "name": "Turtle" },
+        { "id": 7, "symbol": "🦜", "name": "Parrot" },
+        { "id": 8, "symbol": "🐺", "name": "Wolf" },
+        { "id": 9, "symbol": "🦄", "name": "Unicorn" },
+        { "id": 10, "symbol": "🐸", "name": "Frog" },
+        { "id": 11, "symbol": "🦛", "name": "Hippo" },
+        { "id": 12, "symbol": "🐼", "name": "Panda" },
+        { "id": 13, "symbol": "🦅", "name": "Eagle" },
+        { "id": 14, "symbol": "🐙", "name": "Octopus" },
+        { "id": 15, "symbol": "🦩", "name": "Flamingo" },
+        { "id": 16, "symbol": "🐉", "name": "Dragon" }
+      ]
+    },
+    "food": {
+      "name": "Food",
+      "emoji": "🍕",
+      "cards": [
+        { "id": 1, "symbol": "🍕", "name": "Pizza" },
+        { "id": 2, "symbol": "🍔", "name": "Burger" },
+        { "id": 3, "symbol": "🍣", "name": "Sushi" },
+        { "id": 4, "symbol": "🍦", "name": "Ice Cream" },
+        { "id": 5, "symbol": "🍩", "name": "Donut" },
+        { "id": 6, "symbol": "🌮", "name": "Taco" },
+        { "id": 7, "symbol": "🍜", "name": "Noodles" },
+        { "id": 8, "symbol": "🧁", "name": "Cupcake" },
+        { "id": 9, "symbol": "🍓", "name": "Strawberry" },
+        { "id": 10, "symbol": "🥑", "name": "Avocado" },
+        { "id": 11, "symbol": "🍋", "name": "Lemon" },
+        { "id": 12, "symbol": "🍇", "name": "Grapes" },
+        { "id": 13, "symbol": "🥞", "name": "Pancakes" },
+        { "id": 14, "symbol": "🍦", "name": "Soft Ice Cream" },
+        { "id": 15, "symbol": "🥐", "name": "Croissant" },
+        { "id": 16, "symbol": "🍰", "name": "Cake" }
+      ]
+    },
+    "space": {
+      "name": "Space",
+      "emoji": "🚀",
+      "cards": [
+        { "id": 1, "symbol": "🚀", "name": "Rocket" },
+        { "id": 2, "symbol": "🌍", "name": "Earth" },
+        { "id": 3, "symbol": "🌙", "name": "Moon" },
+        { "id": 4, "symbol": "⭐", "name": "Star" },
+        { "id": 5, "symbol": "☄️", "name": "Comet" },
+        { "id": 6, "symbol": "🪐", "name": "Saturn" },
+        { "id": 7, "symbol": "🌌", "name": "Galaxy" },
+        { "id": 8, "symbol": "👩‍🚀", "name": "Astronaut" },
+        { "id": 9, "symbol": "🛸", "name": "UFO" },
+        { "id": 10, "symbol": "🌟", "name": "Glowing Star" },
+        { "id": 11, "symbol": "🪨", "name": "Asteroid" },
+        { "id": 12, "symbol": "🔭", "name": "Telescope" },
+        { "id": 13, "symbol": "☀️", "name": "Sun" },
+        { "id": 14, "symbol": "💫", "name": "Dizzy Star" },
+        { "id": 15, "symbol": "🌠", "name": "Shooting Star" },
+        { "id": 16, "symbol": "🛰️", "name": "Satellite" }
+      ]
+    }
+  },
+  "difficulties": {
+    "easy": {
+      "name": "Easy",
+      "pairs": 6,
+      "cols": 3,
+      "time": 120,
+      "description": "3×4 grid • 6 pairs"
+    },
+    "medium": {
+      "name": "Medium",
+      "pairs": 8,
+      "cols": 4,
+      "time": 90,
+      "description": "4×4 grid • 8 pairs"
+    },
+    "hard": {
+      "name": "Hard",
+      "pairs": 12,
+      "cols": 4,
+      "time": 75,
+      "description": "4×6 grid • 12 pairs"
+    },
+    "expert": {
+      "name": "Expert",
+      "pairs": 16,
+      "cols": 4,
+      "time": 60,
+      "description": "4×8 grid • 16 pairs"
+    }
+  },
+  "scoring": {
+    "baseMatch": 100,
+    "timeBonus": 10,
+    "comboMultiplier": 1.5,
+    "perfectBonus": 500
+  }
+}
