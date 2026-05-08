@@ -1290,7 +1290,7 @@
     // ── API Endpoints ───────────────────────────────────────────────────────
     // Detect environment and set Backend URL
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const BACKEND_URL = isLocal ? 'http://localhost:8000' : 'https://flipgame-production.up.railway.app';
+    const BACKEND_URL = isLocal ? 'http://localhost:8000' : 'https://endearing-optimism-production-6a15.up.railway.app';
     const PYTHON_API = `${BACKEND_URL}/api/v1`;
     // Add guard class immediately so no screen is visible before JS runs
     document.documentElement.classList.add('app-initializing');
@@ -3807,7 +3807,7 @@
     ================================================ */
     const MLBackend = (() => {
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const BACKEND_URL = isLocal ? 'http://localhost:8000' : 'https://flipgame-production.up.railway.app';
+      const BACKEND_URL = isLocal ? 'http://localhost:8000' : 'https://endearing-optimism-production-6a15.up.railway.app';
       const BASE_URL = `${BACKEND_URL}/api/v1/ml`;
       function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
       function getThemeName(themeKey) { return GAME_DATA.themes[themeKey] ? GAME_DATA.themes[themeKey].name : 'Animals'; }
