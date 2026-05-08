@@ -4,7 +4,7 @@
    Network-first for Google Fonts
    ================================================ */
 
-const CACHE_NAME = 'memory-match-v6';
+const CACHE_NAME = 'memory-match-v7';
 const STATIC_URLS = [
   './',
   './index.html',
@@ -71,6 +71,20 @@ self.addEventListener('fetch', event => {
           return response;
         })
         .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // HTML navigation requests — network-first so users always get the latest version
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match('./index.html'))
     );
     return;
   }
