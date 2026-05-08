@@ -45,7 +45,18 @@ export const startLobby = (uid, displayName, avatar) => {
                 if (window.onChallengeError) window.onChallengeError(data.message);
                 break;
             case 'match_found':
+                // Store that a game is coming — but don't start yet; wait for game_start
                 isMultiplayer = true;
+                if (window.onMatchFound) window.onMatchFound(data);
+                break;
+            case 'show_instruction':
+                if (window.onShowInstruction) window.onShowInstruction();
+                break;
+            case 'countdown_update':
+                if (window.onCountdownUpdate) window.onCountdownUpdate(data.seconds_left);
+                break;
+            case 'game_start':
+                // Board arrives here — now actually start the game
                 if (window.startMultiplayerGame) window.startMultiplayerGame(data);
                 break;
             case 'card_flipped':

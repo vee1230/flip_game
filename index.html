@@ -586,6 +586,49 @@
         </div>
       </div>
     </div>
+
+    <!-- ===================== RACE MODE INSTRUCTION MODAL ===================== -->
+    <div id="race-instruction-modal" style="display:none; position:fixed; inset:0; z-index:10500; align-items:center; justify-content:center; flex-direction:column;" aria-modal="true" aria-label="Race Mode Instructions">
+      <!-- Backdrop blur -->
+      <div style="position:absolute; inset:0; background:rgba(8,5,30,0.92); backdrop-filter:blur(6px);"></div>
+      <!-- Card -->
+      <div style="position:relative; z-index:1; max-width:420px; width:92%; background:linear-gradient(145deg,#1a0a3a,#0d1b3e); border:2px solid #7c3aed; border-radius:24px; padding:32px 28px 28px; box-shadow:0 0 40px rgba(124,58,237,0.5), 0 0 80px rgba(0,255,255,0.1); text-align:center; animation:raceModalIn 0.5s cubic-bezier(0.34,1.56,0.64,1) both;">
+        <!-- Icon -->
+        <div style="font-size:52px; margin-bottom:12px; animation:racePulseIcon 1.5s ease-in-out infinite alternate; filter:drop-shadow(0 0 12px #a78bfa);">⚔️</div>
+        <!-- Title -->
+        <h2 style="font-family:'Outfit',sans-serif; font-size:26px; font-weight:900; letter-spacing:2px; background:linear-gradient(90deg,#a78bfa,#67e8f9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:20px; text-shadow:none;">RACE MODE</h2>
+        <!-- Instructions body -->
+        <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(124,58,237,0.3); border-radius:14px; padding:18px 16px; margin-bottom:24px; text-align:left;">
+          <p style="color:#e0e7ff; font-size:14px; line-height:1.7; margin:0; font-family:'Outfit',sans-serif;">
+            🎮 Welcome to <strong style="color:#a78bfa;">Race Mode!</strong><br>
+            You and your opponent will play <strong style="color:#67e8f9;">at the same time.</strong><br><br>
+            🃏 Flip the cards and find <strong>matching pairs</strong> as fast as you can.<br>
+            🏆 Each match gives you points.<br>
+            ⚡ The player with more matches or higher score <strong style="color:#fbbf24;">wins.</strong><br><br>
+            Be quick, remember positions, and <strong style="color:#f87171;">beat your opponent!</strong>
+          </p>
+        </div>
+        <!-- Countdown -->
+        <div style="font-family:'Outfit',sans-serif; font-size:15px; color:#94a3b8; letter-spacing:1px; margin-bottom:6px;">Game starts in</div>
+        <div id="race-countdown-num" style="font-family:'Outfit',sans-serif; font-size:64px; font-weight:900; color:#fff; line-height:1; text-shadow:0 0 20px #7c3aed, 0 0 40px #00ffff; animation:raceCountdownPulse 1s ease-in-out infinite alternate;">5</div>
+        <div style="font-family:'Outfit',sans-serif; font-size:13px; color:#64748b; margin-top:8px; letter-spacing:1px;">seconds...</div>
+      </div>
+    </div>
+    <style>
+      @keyframes raceModalIn {
+        from { opacity:0; transform:scale(0.85) translateY(20px); }
+        to   { opacity:1; transform:scale(1) translateY(0); }
+      }
+      @keyframes racePulseIcon {
+        from { transform: scale(1) rotate(-5deg); }
+        to   { transform: scale(1.1) rotate(5deg); }
+      }
+      @keyframes raceCountdownPulse {
+        from { transform: scale(1);    text-shadow: 0 0 20px #7c3aed, 0 0 40px #00ffff; }
+        to   { transform: scale(1.12); text-shadow: 0 0 30px #a78bfa, 0 0 60px #67e8f9; }
+      }
+    </style>
+
     <!-- Preview Overlay -->
     <div class="preview-overlay" id="preview-overlay" aria-live="polite" aria-label="Preview Phase">
       <div class="preview-banner">
@@ -4348,7 +4391,9 @@
       window.onLobbyUpdate(lastLobbyPlayers);
     };
 
-    window.startMultiplayerGame = (data) => {
+    window.onMatchFound = (data) => {
+      // A match was found. Hide lobby/challenge screens and set up player info.
+      // The game board will arrive with game_start — just store data for now.
       document.getElementById('lobby-overlay').style.display = 'none';
       document.getElementById('challenge-modal').style.display = 'none';
       state.isMultiplayer = true;
@@ -4356,6 +4401,47 @@
       state.mpP2 = data.p2;
       state.mpP1Name = data.p1_name;
       state.mpP2Name = data.p2_name;
+    };
+
+    window.onShowInstruction = () => {
+      // Show the instruction modal and lock card interaction
+      const modal = document.getElementById('race-instruction-modal');
+      if (modal) {
+        modal.style.display = 'flex';
+        document.getElementById('race-countdown-num').textContent = '5';
+      }
+      state.canFlip = false; // Cards are not clickable yet
+    };
+
+    window.onCountdownUpdate = (secondsLeft) => {
+      const numEl = document.getElementById('race-countdown-num');
+      if (numEl) {
+        numEl.textContent = secondsLeft;
+        // Flash animation on each tick
+        numEl.style.transform = 'scale(1.3)';
+        numEl.style.color = secondsLeft <= 2 ? '#f87171' : '#fff';
+        setTimeout(() => { numEl.style.transform = 'scale(1)'; }, 300);
+      }
+    };
+
+    window.startMultiplayerGame = (data) => {
+      // Hide instruction modal with smooth fade-out
+      const modal = document.getElementById('race-instruction-modal');
+      if (modal) {
+        modal.style.transition = 'opacity 0.4s ease';
+        modal.style.opacity = '0';
+        setTimeout(() => {
+          modal.style.display = 'none';
+          modal.style.opacity = '1';
+          modal.style.transition = '';
+        }, 400);
+      }
+
+      state.isMultiplayer = true;
+      state.mpP1 = data.p1 || state.mpP1;
+      state.mpP2 = data.p2 || state.mpP2;
+      state.mpP1Name = data.p1_name || state.mpP1Name;
+      state.mpP2Name = data.p2_name || state.mpP2Name;
 
       const themeData = GAME_DATA.themes[state.theme || 'animals'];
       const pool = [...themeData.cards].slice(0, 8);

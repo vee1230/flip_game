@@ -360,13 +360,34 @@ class ConnectionManager:
         self.lobby[p1_uid]["status"] = "in_game"
         self.lobby[p2_uid]["status"] = "in_game"
 
+        # Notify both players a match was found (no board yet — game hasn't started)
         await session.broadcast({
             "type": "match_found",
             "room_id": room_id,
             "p1": p1_uid, "p1_name": p1_name,
             "p2": p2_uid, "p2_name": p2_name,
+        })
+
+        # Launch countdown in background so this function returns immediately
+        asyncio.create_task(self._run_start_countdown(session))
+
+    async def _run_start_countdown(self, session: "GameSession"):
+        """Backend-controlled countdown. Both clients receive identical events."""
+        # Step 1: show instruction screen
+        await session.broadcast({"type": "show_instruction"})
+        await asyncio.sleep(1.0)  # brief pause before countdown starts
+
+        # Step 2: countdown 5 → 1
+        for i in range(5, 0, -1):
+            await session.broadcast({"type": "countdown_update", "seconds_left": i})
+            await asyncio.sleep(1.0)
+
+        # Step 3: fire game_start — send board now
+        await session.broadcast({
+            "type": "game_start",
             "board": session.board,
-            # No 'turn' — race mode is simultaneous
+            "p1": session.p1_uid, "p1_name": session.players[session.p1_uid]["name"],
+            "p2": session.p2_uid, "p2_name": session.players[session.p2_uid]["name"],
         })
 
     # ── In-game message handling ──────────────────────────────────
