@@ -27,6 +27,9 @@ class RegisterRequest(BaseModel):
     google_uid: Optional[str] = None
     avatar: Optional[str] = None
 
+class TestEmailRequest(BaseModel):
+    email: str
+
 
 class LoginRequest(BaseModel):
     identifier: str   # username OR email
@@ -61,6 +64,8 @@ def register(req: RegisterRequest):
             hashed = hash_password(req.password)
             account_type = "google" if req.google_uid else "registered"
 
+            email_sent_status = False
+
             if existing:
                 # If they have a password already, it's a conflict
                 if existing.get("password_hash"):
@@ -74,6 +79,10 @@ def register(req: RegisterRequest):
                     (req.display_name, req.username, hashed, account_type, req.google_uid or existing.get("google_uid"), req.avatar, existing["id"])
                 )
                 new_id = existing["id"]
+                
+                # Send welcome email for Google-linked users who just finalized their account
+                if req.email:
+                    email_sent_status = send_welcome_email(req.email, req.display_name)
             else:
                 # Normal new registration
                 cursor.execute(
@@ -95,14 +104,16 @@ def register(req: RegisterRequest):
                 
                 # Send welcome email
                 if req.email:
-                    try:
-                        send_welcome_email(req.email, req.display_name)
-                    except Exception:
-                        pass
+                    email_sent_status = send_welcome_email(req.email, req.display_name)
 
             db.commit()
+            
+            msg = "Account created successfully" if email_sent_status else "Account created successfully, but email could not be sent"
+            
             return {
                 "success": True,
+                "message": msg,
+                "email_sent": email_sent_status,
                 "user": {
                     "id":       new_id,
                     "username": req.username,
@@ -115,6 +126,15 @@ def register(req: RegisterRequest):
             }
     finally:
         db.close()
+
+@router.post("/test-email")
+def test_email(req: TestEmailRequest):
+    """Temporary endpoint to verify SMTP configuration"""
+    success = send_welcome_email(req.email, "Test User")
+    if success:
+        return {"success": True, "message": f"Test email sent to {req.email}"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to send test email. Check backend logs and SMTP environment variables.")
 
 
 @router.post("/login")
