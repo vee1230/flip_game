@@ -1292,33 +1292,31 @@
       const err = document.getElementById('reg-error');
       if (!name) { err.textContent = 'Display name is required.'; return; }
       if (!uname) { err.textContent = 'Username is required.'; return; }
-      if (pass.length < 4) { err.textContent = 'Password must be at least 4 characters.'; return; }
+      if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
       const users = getUsers();
-      if (users[uname]) { err.textContent = 'Username already taken.'; return; }
-      const user = { id: uname, name, username: uname, type: 'local', avatar: null };
-      // If this is a Google-linked registration, attach the Google info
+      if (users[uname]) { err.textContent = 'Username already taken locally.'; return; }
+
       const pending = localStorage.getItem('mmPuzzleGooglePending');
       let googleUid = null;
+      let email = '';
+      let avatar = null;
+      let type = 'local';
+
       if (pending) {
         try {
           const g = JSON.parse(pending);
-          user.type = 'google';
-          user.avatar = g.avatar;
-          user.email = g.email;
+          type = 'google';
+          avatar = g.avatar;
+          email = g.email;
           googleUid = g.uid;
-          users[uname] = { ...user, pass, googleUid: g.uid, email: g.email };
-          localStorage.removeItem('mmPuzzleGooglePending');
-        } catch (e) {
-          users[uname] = { ...user, pass };
-        }
-      } else {
-        users[uname] = { ...user, pass };
+        } catch (e) { }
       }
 
-      // Save locally first
-      saveUsers(users);
+      err.style.color = '';
+      err.textContent = 'Creating account...';
 
-      // Register on backend to get the real numeric DB id
+      // Register on backend FIRST
+      let numericId = uname;
       try {
         const res = await fetch(`${PYTHON_API}/auth/register`, {
           method: 'POST',
@@ -1327,19 +1325,30 @@
             username: uname,
             display_name: name,
             password: pass,
-            email: user.email || '',
-            google_uid: googleUid || null,
-            avatar: user.avatar || null
+            email: email,
+            google_uid: googleUid,
+            avatar: avatar
           })
         });
         const data = await res.json();
-        if (res.ok && data.user) {
-          // Store the real numeric DB id
-          user.id = data.user.id;
-          users[uname] = { ...users[uname], id: data.user.id };
-          saveUsers(users);
+        if (!res.ok) {
+           err.style.color = '#f87171';
+           err.textContent = data.detail || 'Registration failed.';
+           return; // STOP! Do not save locally.
         }
-      } catch (e) { /* non-critical */ }
+        if (data.user && data.user.id) {
+           numericId = data.user.id;
+        }
+      } catch (e) {
+        err.style.color = '#f87171';
+        err.textContent = 'Network error during registration. Backend might be down.';
+        return; // STOP!
+      }
+
+      // Success - save locally with numeric ID
+      if (pending) localStorage.removeItem('mmPuzzleGooglePending');
+      users[uname] = { id: numericId, name, username: uname, type, avatar, email, googleUid, pass };
+      saveUsers(users);
 
       // Clear registration form
       document.getElementById('reg-name').value = '';
@@ -2378,9 +2387,13 @@
 
       // Still no valid numeric id — hide chest
       if (isNaN(playerId)) {
+        console.log("Player ID is not numeric. Chest hidden.");
         document.getElementById('reward-chest-section').style.display = 'none';
         return;
       }
+
+      console.log("Current user:", currentUser);
+      console.log("Player ID:", playerId);
 
       try {
         const res = await fetch(`${PYTHON_API}/rewards/pending/${playerId}`);
@@ -2396,6 +2409,8 @@
         const title = document.getElementById('reward-chest-title');
         const desc = document.getElementById('reward-chest-desc');
         const badge = document.getElementById('reward-chest-badge');
+
+        console.log("Pending reward response:", data);
 
         if (pending && pending.length > 0) {
           // Has unclaimed reward
