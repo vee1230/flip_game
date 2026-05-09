@@ -80,17 +80,80 @@ def _send_via_smtp(to_email: str, to_name: str, subject: str, html_content: str)
 
 
 def send_welcome_email(to_email: str, to_name: str) -> bool:
-    subject = "Welcome to Memory Match Puzzle!"
+    subject = "🎮 Welcome to Memory Match Puzzle!"
     html = f"""
     <html>
-    <body style="font-family: Arial, sans-serif; color: #333;">
-        <p>Hi {to_name},</p>
-        <p>Welcome to Memory Match Puzzle!<br>
-        Your account has been created successfully.</p>
-        <p>You can now play games, save your progress, compete on the leaderboard, and unlock rewards.</p>
-        <br>
-        <p>Thank you,<br>
-        {SMTP_FROM_NAME} Team</p>
+    <body style="margin:0; padding:0; background-color:#0a0a1a; font-family:'Segoe UI',Arial,sans-serif;">
+      <div style="max-width:600px; margin:0 auto; background:linear-gradient(135deg,#0f0c29 0%,#1a1a3e 50%,#24243e 100%); border-radius:16px; overflow:hidden; border:1px solid rgba(255,255,255,0.08);">
+        
+        <!-- Header Banner -->
+        <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); padding:40px 30px; text-align:center;">
+          <div style="font-size:48px; margin-bottom:8px;">🧩</div>
+          <h1 style="margin:0; color:#ffffff; font-size:28px; font-weight:700; letter-spacing:-0.5px;">Memory Match Puzzle</h1>
+          <p style="margin:8px 0 0; color:rgba(255,255,255,0.85); font-size:14px;">Train your brain. Challenge your friends.</p>
+        </div>
+
+        <!-- Welcome Message -->
+        <div style="padding:32px 30px 24px;">
+          <h2 style="margin:0 0 8px; color:#e0e0ff; font-size:22px;">Welcome aboard, {to_name}! 🎉</h2>
+          <p style="margin:0 0 20px; color:rgba(255,255,255,0.65); font-size:15px; line-height:1.6;">
+            Your account has been created successfully. You're now part of a growing community of memory champions!
+          </p>
+
+          <!-- Play Now Button -->
+          <div style="text-align:center; margin:28px 0;">
+            <a href="https://flip-game-live.vercel.app/" 
+               style="display:inline-block; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:#ffffff; text-decoration:none; padding:16px 48px; border-radius:50px; font-size:18px; font-weight:700; letter-spacing:0.5px;">
+              ▶ PLAY NOW
+            </a>
+          </div>
+        </div>
+
+        <!-- Feature Cards -->
+        <div style="padding:0 30px 28px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate; border-spacing:0 10px;">
+            <tr>
+              <td style="background:rgba(102,126,234,0.12); border-radius:12px; padding:16px 18px; border:1px solid rgba(102,126,234,0.2);">
+                <span style="font-size:20px;">🏆</span>
+                <span style="color:#e0e0ff; font-size:14px; font-weight:600; margin-left:10px;">Leaderboard</span>
+                <p style="margin:6px 0 0; color:rgba(255,255,255,0.5); font-size:12px;">Compete with players worldwide</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:rgba(118,75,162,0.12); border-radius:12px; padding:16px 18px; border:1px solid rgba(118,75,162,0.2);">
+                <span style="font-size:20px;">⭐</span>
+                <span style="color:#e0e0ff; font-size:14px; font-weight:600; margin-left:10px;">Daily Rewards</span>
+                <p style="margin:6px 0 0; color:rgba(255,255,255,0.5); font-size:12px;">Earn stars and unlock achievements</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:rgba(102,126,234,0.12); border-radius:12px; padding:16px 18px; border:1px solid rgba(102,126,234,0.2);">
+                <span style="font-size:20px;">🎯</span>
+                <span style="color:#e0e0ff; font-size:14px; font-weight:600; margin-left:10px;">Multiple Themes</span>
+                <p style="margin:6px 0 0; color:rgba(255,255,255,0.5); font-size:12px;">Animals, Food, Space, Nature &amp; more</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:rgba(118,75,162,0.12); border-radius:12px; padding:16px 18px; border:1px solid rgba(118,75,162,0.2);">
+                <span style="font-size:20px;">🤝</span>
+                <span style="color:#e0e0ff; font-size:14px; font-weight:600; margin-left:10px;">Multiplayer</span>
+                <p style="margin:6px 0 0; color:rgba(255,255,255,0.5); font-size:12px;">Challenge friends in real-time matches</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Footer -->
+        <div style="padding:20px 30px; border-top:1px solid rgba(255,255,255,0.06); text-align:center;">
+          <p style="margin:0; color:rgba(255,255,255,0.35); font-size:12px;">
+            © 2026 {SMTP_FROM_NAME} · All rights reserved
+          </p>
+          <p style="margin:6px 0 0;">
+            <a href="https://flip-game-live.vercel.app/" style="color:rgba(102,126,234,0.7); font-size:12px; text-decoration:none;">Visit Game</a>
+          </p>
+        </div>
+
+      </div>
     </body>
     </html>
     """
