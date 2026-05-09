@@ -42,14 +42,14 @@ export async function initDailyChallenge() {
 async function getDailyChallengeStatus() {
   const currentUser = window.currentUser || JSON.parse(localStorage.getItem('mmPuzzleSession') || '{}');
   
-  if (!currentUser.uid) {
+  if (!currentUser.id) {
     // Not logged in, use guest localStorage
     return getLocalDailyChallengeStatus();
   }
 
   try {
     // Fetch from backend
-    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000'}/daily-challenge/status/${currentUser.uid}`);
+    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/status/${currentUser.id}`);
     if (!response.ok) throw new Error('Failed to fetch status');
     
     const data = await response.json();
@@ -343,7 +343,7 @@ export async function markChallengeCompleted() {
   try {
     const currentUser = window.currentUser || JSON.parse(localStorage.getItem('mmPuzzleSession') || '{}');
     
-    if (!currentUser.uid) {
+    if (!currentUser.id) {
       // Guest user - just update localStorage
       const status = JSON.parse(localStorage.getItem(DAILY_CHALLENGE_STATUS_KEY) || '{}');
       status.is_completed = true;
@@ -354,7 +354,7 @@ export async function markChallengeCompleted() {
     }
 
     // Authenticated user - send to backend
-    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000'}/daily-challenge/complete/${currentUser.uid}`, {
+    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/complete/${currentUser.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -368,7 +368,11 @@ export async function markChallengeCompleted() {
       const data = await response.json();
       if (data.status === 'success') {
         // Update localStorage cache
-        localStorage.setItem(DAILY_CHALLENGE_STATUS_KEY, JSON.stringify(data.data));
+        // We also want to make sure the frontend knows it's completed immediately
+        const status = JSON.parse(localStorage.getItem(DAILY_CHALLENGE_STATUS_KEY) || '{}');
+        status.is_completed = true;
+        status.matched_pairs = window.dailyChallengeMatches;
+        localStorage.setItem(DAILY_CHALLENGE_STATUS_KEY, JSON.stringify(status));
       }
     }
   } catch (error) {
@@ -384,8 +388,8 @@ async function claimDailyReward() {
   try {
     const currentUser = window.currentUser || JSON.parse(localStorage.getItem('mmPuzzleSession') || '{}');
     
-    if (!currentUser.uid) {
-      // Guest user - just update localStorage
+    if (!currentUser.id) {
+      // Guest user - just update localStorage visually
       const status = JSON.parse(localStorage.getItem(DAILY_CHALLENGE_STATUS_KEY) || '{}');
       status.is_claimed = true;
       localStorage.setItem(DAILY_CHALLENGE_STATUS_KEY, JSON.stringify(status));
@@ -396,29 +400,38 @@ async function claimDailyReward() {
     }
 
     // Authenticated user - send to backend
-    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000'}/daily-challenge/claim/${currentUser.uid}`, {
+    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/claim`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player_id: currentUser.id })
     });
 
     if (response.ok) {
       const data = await response.json();
-      if (data.status === 'success') {
-        // Update localStorage cache
-        localStorage.setItem(DAILY_CHALLENGE_STATUS_KEY, JSON.stringify(data.data));
+      if (data.success) {
+        // Update user state
+        currentUser.stars = data.total_stars;
+        localStorage.setItem('mmPuzzleSession', JSON.stringify(currentUser));
+        
+        // Update daily challenge localStorage cache
+        const status = JSON.parse(localStorage.getItem(DAILY_CHALLENGE_STATUS_KEY) || '{}');
+        status.is_claimed = true;
+        localStorage.setItem(DAILY_CHALLENGE_STATUS_KEY, JSON.stringify(status));
         
         // Show reward animation
         showRewardClaimedAnimation();
         
         // Update UI
-        updateDailyChallengeUI(data.data);
+        updateDailyChallengeUI(status);
         
-        // Update trophy display if available
-        if (data.data.new_trophy_balance) {
-          updateTrophyDisplay(data.data.new_trophy_balance);
+        // Update Stars display on the top bar!
+        if (typeof window.updateStarsDisplay === 'function') {
+          window.updateStarsDisplay();
         }
         
         closeDailyChallengeModal();
+      } else {
+        alert(data.message || 'Reward already claimed today.');
       }
     } else {
       const error = await response.json();

@@ -87,8 +87,8 @@ def register(req: RegisterRequest):
                 # Normal new registration
                 cursor.execute(
                     """INSERT INTO players
-                       (display_name, username, email, password_hash, account_type, status, google_uid, profile_picture)
-                       VALUES (%s, %s, %s, %s, %s, 'Active', %s, %s)""",
+                       (display_name, username, email, password_hash, account_type, status, google_uid, profile_picture, stars)
+                       VALUES (%s, %s, %s, %s, %s, 'Active', %s, %s, 0)""",
                     (req.display_name, req.username, req.email, hashed,
                      account_type, req.google_uid, req.avatar)
                 )
@@ -121,7 +121,8 @@ def register(req: RegisterRequest):
                     "email":    req.email,
                     "type":     account_type,
                     "avatar":   req.avatar,
-                    "trophies": 0
+                    "trophies": 0,
+                    "stars":    0
                 }
             }
     finally:
@@ -167,7 +168,8 @@ def login(req: LoginRequest):
                     "email":    user.get("email", ""),
                     "type":     user["account_type"],
                     "avatar":   user.get("profile_picture"),
-                    "trophies": user.get("trophies", 0)
+                    "trophies": user.get("trophies", 0),
+                    "stars":    user.get("stars", 0)
                 }
             }
     finally:
@@ -265,15 +267,16 @@ def google_callback(code: Optional[str] = None, error: Optional[str] = None):
                     "name": existing_user["display_name"],
                     "avatar": existing_user["profile_picture"] or avatar,
                     "email": email,
-                    "trophies": existing_user.get("trophies", 0)
+                    "trophies": existing_user.get("trophies", 0),
+                    "stars": existing_user.get("stars", 0)
                 }
             else:
                 # Use email as default username for Google auth
                 username = email.split("@")[0] if "@" in email else email
                 cursor.execute(
                     """INSERT INTO players 
-                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies) 
-                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0)""",
+                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies, stars) 
+                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0, 0)""",
                     (name, username, email, google_id, avatar)
                 )
                 db.commit()
@@ -298,6 +301,7 @@ def google_callback(code: Optional[str] = None, error: Optional[str] = None):
                     "avatar": avatar,
                     "email": email,
                     "trophies": 0,
+                    "stars": 0,
                     "has_pending_reward": True
                 }
                 
@@ -326,19 +330,21 @@ def firebase_sync(req: FirebaseSyncRequest):
                 db.commit()
                 user_id = user["id"]
                 trophies = user.get("trophies", 0)
+                stars = user.get("stars", 0)
                 username = user["username"]
             else:
                 # Create new user
                 username = req.email.split("@")[0] if "@" in req.email else req.uid[:10]
                 cursor.execute(
                     """INSERT INTO players 
-                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies) 
-                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0)""",
+                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies, stars) 
+                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0, 0)""",
                     (req.name, username, req.email, req.uid, req.avatar)
                 )
                 db.commit()
                 user_id = cursor.lastrowid
                 trophies = 0
+                stars = 0
                 
                 # Create a pending welcome reward for the new user
                 cursor.execute(
@@ -365,7 +371,8 @@ def firebase_sync(req: FirebaseSyncRequest):
                     "email": req.email,
                     "type": "google",
                     "avatar": req.avatar,
-                    "trophies": trophies
+                    "trophies": trophies,
+                    "stars": stars
                 }
             }
     finally:

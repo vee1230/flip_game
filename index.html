@@ -1649,11 +1649,20 @@
       }
     }
 
+    function updateStarsDisplay() {
+      const starsEl = document.getElementById('home-coins-value');
+      if (starsEl) {
+        const starsCount = (currentUser && currentUser.stars) ? currentUser.stars : 0;
+        starsEl.textContent = `${starsCount} Stars`;
+      }
+    }
+
     function setSession(user) {
       currentUser = user;
       localStorage.setItem(SESS_KEY, JSON.stringify(user));
       updatePlayerChip();
       updateDropdownHeader();
+      updateStarsDisplay();
       
       // Request Push Notification permission if logged in
       if (user && user.type !== 'guest') {
@@ -1663,6 +1672,7 @@
     function clearSession() {
       currentUser = null;
       localStorage.removeItem(SESS_KEY);
+      updateStarsDisplay();
     }
     function switchAuthTab(tab) {
       document.getElementById('tab-login').classList.toggle('active', tab === 'login');

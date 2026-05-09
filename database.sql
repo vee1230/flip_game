@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS `players` (
   `status` varchar(50) DEFAULT 'Active',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `trophies` int(11) NOT NULL DEFAULT 0,
+  `stars` int(11) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `google_uid` (`google_uid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

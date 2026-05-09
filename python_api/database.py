@@ -79,6 +79,11 @@ def init_db():
             except pymysql.err.OperationalError as e:
                 if e.args[0] != 1060: raise
 
+            try:
+                cursor.execute("ALTER TABLE players ADD COLUMN stars INT(11) NOT NULL DEFAULT 0")
+            except pymysql.err.OperationalError as e:
+                if e.args[0] != 1060: raise
+
             db.commit()
         db.close()
         print("Database initialized successfully.")

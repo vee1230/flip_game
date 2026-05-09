@@ -12,7 +12,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, admin, notifications, scores, ml, users, multiplayer, rewards, cron
+from routers import auth, admin, notifications, scores, ml, users, multiplayer, rewards, cron, daily_challenge
 from models.models import load_models
 from database import init_db
 from firebase_config import init_firebase
@@ -70,6 +70,7 @@ app.include_router(ml.router,            prefix="/api/v1/ml",            tags=["
 app.include_router(multiplayer.router,   prefix="/api/v1/multiplayer",   tags=["Multiplayer"])
 app.include_router(rewards.router,       prefix="/api/v1/rewards",       tags=["Rewards"])
 app.include_router(cron.router,          prefix="/api/v1/cron",          tags=["Cron Jobs"])
+app.include_router(daily_challenge.router, prefix="/api/v1/daily-challenge", tags=["Daily Challenge"])
 
 
 @app.get("/", tags=["Root"])
