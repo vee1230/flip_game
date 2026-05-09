@@ -1,0 +1,8 @@
+{
+  "include": ["python_api"],
+  "extraPaths": ["python_api"],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false
+}
