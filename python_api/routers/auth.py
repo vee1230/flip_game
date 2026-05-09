@@ -358,9 +358,13 @@ def firebase_sync(req: FirebaseSyncRequest):
                 # Send welcome email on new registration via Firebase
                 if req.email:
                     try:
-                        send_welcome_email(req.email, req.name)
-                    except Exception:
-                        pass
+                        email_sent = send_welcome_email(req.email, req.name)
+                        if email_sent:
+                            print(f"[Auth] Welcome email sent successfully to {req.email}")
+                        else:
+                            print(f"[Auth] Welcome email FAILED for {req.email} (returned False)")
+                    except Exception as e:
+                        print(f"[Auth] Exception sending welcome email to {req.email}: {e}")
             
             return {
                 "success": True,
