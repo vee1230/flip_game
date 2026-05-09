@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - Memory Match</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/admin.css">
+    <style>
+        body {
+            background-color: #0f172a;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,0.2) 0, transparent 50%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Outfit', sans-serif;
+            color: #f8fafc;
+        }
+        .login-container {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+        .login-title {
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            background: linear-gradient(to right, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .login-subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 32px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .input-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .login-input {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: white;
+            font-size: 15px;
+            font-family: 'Outfit', sans-serif;
+            outline: none;
+            transition: all 0.2s;
+            box-sizing: border-box;
+        }
+        .login-input:focus {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+        }
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #7c3aed, #06b6d4);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -10px rgba(124, 58, 237, 0.5);
+        }
+        #login-error {
+            color: #ef4444;
+            font-size: 14px;
+            margin-top: 16px;
+            display: none;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 24px;
+            color: #94a3b8;
+            font-size: 13px;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .back-link:hover {
+            color: #f8fafc;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <div class="login-title">Admin Panel</div>
+        <div class="login-subtitle">Memory Match Puzzle</div>
+
+        <form id="login-form">
+            <div class="input-group">
+                <label class="input-label">Username</label>
+                <input type="text" id="admin-username" class="login-input" placeholder="Enter admin username" required>
+            </div>
+            <div class="input-group">
+                <label class="input-label">Password</label>
+                <input type="password" id="admin-password" class="login-input" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="login-btn" id="login-btn-text">Authenticate</button>
+            <div id="login-error">Invalid credentials</div>
+        </form>
+
+        <a href="../index.html" class="back-link">← Return to Game</a>
+    </div>
+
+    <script>
+        // Check if already logged in
+        if (localStorage.getItem('adminToken')) {
+            window.location.href = 'dashboard.html';
+        }
+
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const API_URL = isLocal ? 'http://localhost:8000/api/v1' : 'https://endearing-optimism-production-6a15.up.railway.app/api/v1';
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const user = document.getElementById('admin-username').value;
+            const pass = document.getElementById('admin-password').value;
+            const errorEl = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn-text');
+
+            errorEl.style.display = 'none';
+            btn.textContent = 'Authenticating...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/admin/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user, password: pass })
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    localStorage.setItem('adminToken', data.token);
+                    localStorage.setItem('adminUser', JSON.stringify(data.admin));
+                    window.location.href = 'dashboard.html';
+                } else {
+                    errorEl.textContent = data.detail || 'Invalid credentials';
+                    errorEl.style.display = 'block';
+                }
+            } catch (err) {
+                errorEl.textContent = 'Server connection error';
+                errorEl.style.display = 'block';
+            } finally {
+                btn.textContent = 'Authenticate';
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

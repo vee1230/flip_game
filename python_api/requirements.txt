@@ -15,3 +15,7 @@ pandas==2.2.2
 requests==2.31.0
 cryptography>=41.0.0
 firebase-admin==6.5.0
+
+# Admin auth
+PyJWT==2.8.0
+bcrypt==4.1.3

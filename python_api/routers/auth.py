@@ -159,6 +159,9 @@ def login(req: LoginRequest):
             if user.get("password_hash") != hashed:
                 raise HTTPException(status_code=401, detail="Invalid email/username or password.")
 
+            cursor.execute("UPDATE players SET last_login = CURRENT_TIMESTAMP WHERE id = %s", (user["id"],))
+            db.commit()
+
             return {
                 "success": True,
                 "user": {

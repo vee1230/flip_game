@@ -1,3 +1,55 @@
+// Admin Dashboard Logic
+
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_URL = isLocal ? 'http://localhost:8000/api/v1' : 'https://endearing-optimism-production-6a15.up.railway.app/api/v1';
+
+let adminToken = localStorage.getItem('adminToken');
+let adminUser = null;
+
+// Auth check
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        adminUser = JSON.parse(localStorage.getItem('adminUser'));
+    } catch(e) {}
+    
+    if (!adminToken || !adminUser) {
+        window.location.href = 'index.html';
+        return;
+    }
+
+    document.getElementById('admin-name-display').textContent = adminUser.name || 'Admin';
+    document.getElementById('auth-check').style.display = 'none';
+
+    // Load initial tab
+    loadOverview();
+
+    // Mobile Sidebar
+    document.getElementById('sidebar-toggle').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('open');
+    });
+});
+
+function logout() {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
+    window.location.href = 'index.html';
+}
+
+// Interceptor for fetch to add Authorization header
+async function apiFetch(endpoint, options = {}) {
+    if (!options.headers) options.headers = {};
+    options.headers['Authorization'] = `Bearer ${adminToken}`;
+    options.headers['Content-Type'] = 'application/json';
+
+    const res = await fetch(`${API_URL}${endpoint}`, options);
+    if (res.status === 401) {
+        logout();
+        throw new Error('Unauthorized');
+    }
+    return res.json();
+}
+
+// Tab Switching
 function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -5,501 +57,230 @@ function switchTab(tabId) {
     document.getElementById(tabId).classList.add('active');
     document.querySelector(`.nav-item[href="#${tabId}"]`).classList.add('active');
     
+    if (window.innerWidth <= 768) {
+        document.getElementById('sidebar').classList.remove('open');
+    }
+
     if (tabId === 'overview') loadOverview();
-    if (tabId === 'users') loadUsers();
+    if (tabId === 'users') loadPlayers();
+    if (tabId === 'rewards') loadRewards();
     if (tabId === 'leaderboard') loadLeaderboard();
     if (tabId === 'analytics') loadAnalytics();
 }
 
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const PYTHON_API = isLocal ? 'http://localhost:8000/api/v1' : 'https://flipgame-production.up.railway.app/api/v1';
-const PHP_API = '../includes/api.php';
-
-async function fetchAPI(action) {
-    const pyMap = {
-        'get_overview':   `${PYTHON_API}/admin/overview`,
-        'get_users':      `${PYTHON_API}/admin/users`,
-        'get_leaderboard':`${PYTHON_API}/admin/leaderboard`,
-        'get_activities': `${PYTHON_API}/admin/activities`,
-        'get_analytics':  `${PYTHON_API}/admin/analytics`,
-    };
-    const url = pyMap[action];
-    if (!url) {
-        console.error('Unknown action:', action);
-        return null;
-    }
-    try {
-        const res = await fetch(url);
-        return await res.json();
-    } catch (e) {
-        console.error('API Error (Python API failed):', e);
-        return null;
-    }
-}
-
+// -----------------------------------------------------------------
+// OVERVIEW TAB
+// -----------------------------------------------------------------
 async function loadOverview() {
-    const data = await fetchAPI('get_overview');
-    if (data && !data.error) {
-        document.getElementById('stat-total-users').textContent = data.total_users;
-        document.getElementById('stat-total-games').textContent = data.total_games;
-        document.getElementById('stat-max-score').textContent = data.max_score;
-        document.getElementById('stat-active-users').textContent = data.active_users;
+    try {
+        const data = await apiFetch('/admin/overview');
+        document.getElementById('stat-total-players').textContent = data.total_players.toLocaleString();
+        document.getElementById('stat-active-players').textContent = data.active_players.toLocaleString();
+        document.getElementById('stat-total-stars').textContent = data.total_stars.toLocaleString();
         document.getElementById('stat-total-trophies').textContent = data.total_trophies.toLocaleString();
-    }
 
-    const activities = await fetchAPI('get_activities');
-    if (activities && !activities.error) {
+        const activities = await apiFetch('/admin/activities');
         const tbody = document.querySelector('#activities-table tbody');
         tbody.innerHTML = activities.map(a => `
             <tr>
                 <td><strong>${a.display_name}</strong></td>
-                <td><span class="badge" style="background: rgba(255,255,255,0.1); border:none; color:#fff;">${a.action_type.replace('_', ' ')}</span></td>
-                <td>${a.details}</td>
-                <td>${new Date(a.created_at).toLocaleString()}</td>
+                <td><span class="badge" style="background: rgba(255,255,255,0.1);">${a.action_type}</span></td>
+                <td>${a.details || ''}</td>
+                <td style="color:#94a3b8;font-size:12px;">${new Date(a.created_at).toLocaleString()}</td>
             </tr>
         `).join('');
-    }
+    } catch(e) { console.error('Overview error:', e); }
 }
 
-async function loadUsers() {
-    const data = await fetchAPI('get_users');
-    if (data && !data.error) {
-        const tbody = document.querySelector('#users-table tbody');
-        tbody.innerHTML = data.map(u => `
-            <tr>
-                <td><strong>${u.display_name}</strong></td>
-                <td>@${u.username}</td>
-                <td><span class="badge ${u.account_type}">${u.account_type}</span></td>
-                <td><span class="badge ${u.status}">${u.status}</span></td>
-                <td style="font-weight:700; color:#fbbf24;">🏆 ${u.trophies || 0}</td>
-                <td>${new Date(u.created_at).toLocaleDateString()}</td>
-                <td style="display:flex; gap:8px;">
-                    <button onclick="openEditModal(${u.id},'${u.display_name.replace(/'/g,"\\'")}','${(u.username||'').replace(/'/g,"\\'")}','${(u.email||'').replace(/'/g,"\\'")}','${u.status}')"
-                        style="background:none; border:1px solid rgba(124,58,237,0.5); color:#a78bfa; border-radius:8px; padding:5px 12px; cursor:pointer; font-weight:700; font-family:'Outfit',sans-serif; font-size:13px; transition:0.2s;"
-                        onmouseover="this.style.background='rgba(124,58,237,0.2)'" onmouseout="this.style.background='none'">Edit</button>
-                    <button onclick="deleteUser(${u.id})"
-                        style="background:none; border:1px solid rgba(239,68,68,0.5); color:#f87171; border-radius:8px; padding:5px 12px; cursor:pointer; font-weight:700; font-family:'Outfit',sans-serif; font-size:13px; transition:0.2s;"
-                        onmouseover="this.style.background='rgba(239,68,68,0.2)'" onmouseout="this.style.background='none'">Delete</button>
-                </td>
-            </tr>
-        `).join('');
-    }
-}
+// -----------------------------------------------------------------
+// PLAYERS TAB
+// -----------------------------------------------------------------
+let allPlayers = [];
 
-function openEditModal(id, name, username, email, status) {
-    document.getElementById('edit-id').value = id;
-    document.getElementById('edit-name').value = name;
-    document.getElementById('edit-username').value = username;
-    document.getElementById('edit-email').value = email;
-    document.getElementById('edit-status').value = status;
-    document.getElementById('edit-error').textContent = '';
-    document.getElementById('edit-modal').style.display = 'block';
-    document.getElementById('edit-modal-overlay').style.display = 'block';
-}
-
-function closeEditModal() {
-    document.getElementById('edit-modal').style.display = 'none';
-    document.getElementById('edit-modal-overlay').style.display = 'none';
-}
-
-async function saveUserEdit() {
-    const id           = document.getElementById('edit-id').value;
-    const display_name = document.getElementById('edit-name').value.trim();
-    const username     = document.getElementById('edit-username').value.trim();
-    const email        = document.getElementById('edit-email').value.trim();
-    const status       = document.getElementById('edit-status').value;
-    const errEl        = document.getElementById('edit-error');
-
-    if (!display_name || !username) { errEl.textContent = 'Name and username are required.'; return; }
-
+async function loadPlayers() {
     try {
-        const res = await fetch(`${PYTHON_API}/admin/users/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: parseInt(id), display_name, username, email, status })
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-    } catch (e) {
-        errEl.textContent = e.message || 'Error updating user.';
-        return;
-    }
-    closeEditModal();
-    loadUsers();
+        allPlayers = await apiFetch('/admin/players');
+        renderPlayers(allPlayers);
+    } catch(e) { console.error('Players error:', e); }
 }
 
-async function deleteUser(id) {
-    if (!confirm('Are you sure you want to delete this user? This cannot be undone.')) return;
-    try {
-        const res = await fetch(`${PYTHON_API}/admin/users/${id}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!data.error) { loadUsers(); loadOverview(); }
-    } catch(e) {
-        console.error('Error deleting user:', e);
-    }
+function renderPlayers(players) {
+    const tbody = document.querySelector('#players-table tbody');
+    tbody.innerHTML = players.map(p => `
+        <tr>
+            <td>
+                <strong>${p.display_name}</strong><br>
+                <span style="font-size:12px;color:#94a3b8;">@${p.username} | ${p.email || 'No email'}</span>
+            </td>
+            <td><span class="badge ${p.account_type.toLowerCase()}">${p.account_type}</span></td>
+            <td><span class="badge ${p.status.toLowerCase()}">${p.status}</span></td>
+            <td style="color:#fcd34d;font-weight:bold;">${p.stars}</td>
+            <td style="color:#fbbf24;font-weight:bold;">${p.trophies}</td>
+            <td>${p.best_score || 0}</td>
+            <td>${p.games_played || 0}</td>
+            <td style="font-size:12px;color:#94a3b8;">${p.last_login ? new Date(p.last_login).toLocaleDateString() : 'Never'}</td>
+        </tr>
+    `).join('');
 }
 
-async function loadLeaderboard() {
-    const stage = document.getElementById('lb-filter-stage').value || '';
-    const theme = document.getElementById('lb-filter-theme').value || '';
-    const playerSearch = document.getElementById('lb-filter-player').value.toLowerCase() || '';
-    
-    let url = `${PYTHON_API}/admin/leaderboard?limit=100`;
-    if (stage) url += `&stage=${encodeURIComponent(stage)}`;
-    if (theme) url += `&theme=${encodeURIComponent(theme)}`;
-    
+function filterPlayers() {
+    const term = document.getElementById('player-search').value.toLowerCase();
+    const filtered = allPlayers.filter(p => 
+        p.display_name.toLowerCase().includes(term) || 
+        p.username.toLowerCase().includes(term) || 
+        (p.email && p.email.toLowerCase().includes(term))
+    );
+    renderPlayers(filtered);
+}
+
+// -----------------------------------------------------------------
+// REWARDS TAB
+// -----------------------------------------------------------------
+async function loadRewards() {
     try {
-        const res = await fetch(url);
-        const data = await res.json();
-        
-        if (data.error) throw new Error(data.error);
-        
-        const tbody = document.querySelector('#leaderboard-table tbody');
-        const emptyState = document.getElementById('leaderboard-empty-state');
-        const table = document.getElementById('leaderboard-table');
-        
-        // Update summary cards
-        const summary = data.summary || {};
-        document.getElementById('lb-highest-score').textContent = (summary.highest_score || 0).toLocaleString();
-        document.getElementById('lb-top-player').textContent = summary.top_player || '—';
-        document.getElementById('lb-fastest-time').textContent = (summary.fastest_time || 0) + 's';
-        document.getElementById('lb-most-theme').textContent = summary.most_played_theme || '—';
-        
-        // Filter leaderboard data by player name if search is active
-        let leaderboard = data.leaderboard || [];
-        if (playerSearch) {
-            leaderboard = leaderboard.filter(l => 
-                l.display_name.toLowerCase().includes(playerSearch)
-            );
+        // Load players for select dropdown
+        if (allPlayers.length === 0) {
+            allPlayers = await apiFetch('/admin/players');
         }
         
-        // Show/hide empty state
-        if (leaderboard.length === 0) {
-            emptyState.style.display = 'block';
-            table.style.display = 'none';
-        } else {
-            emptyState.style.display = 'none';
-            table.style.display = 'table';
+        const select = document.getElementById('reward-player-select');
+        select.innerHTML = '<option value="">Select a player...</option>' + 
+            allPlayers.map(p => `<option value="${p.id}">${p.display_name} (@${p.username}) - ⭐ ${p.stars} | 🏆 ${p.trophies}</option>`).join('');
+
+        // Load logs
+        const logs = await apiFetch('/admin/reward-logs');
+        const tbody = document.querySelector('#reward-logs-table tbody');
+        tbody.innerHTML = logs.map(l => {
+            const isAdd = l.action === 'add';
+            const color = isAdd ? 'var(--success)' : 'var(--danger)';
+            const sign = isAdd ? '+' : '-';
+            const icon = l.reward_type === 'stars' ? '⭐' : '🏆';
             
-            tbody.innerHTML = leaderboard.map((l, idx) => {
-                const accountBadgeStyle = l.account_type === 'Google' 
-                    ? 'background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3);'
-                    : 'background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3);';
-                
-                const rank = l.rank || (idx + 1);
-                const timeFormatted = formatTime(l.time_seconds);
-                const dateAchieved = new Date(l.achieved_at).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                });
-                
-                return `
-                    <tr>
-                        <td style="font-weight:700; color:#fcd34d; text-align:center;">
-                            ${rank <= 3 ? getTrophyEmoji(rank) : '#' + rank}
-                        </td>
-                        <td>
-                            <strong>${escapeHtml(l.display_name)}</strong>
-                            <span class="badge" style="${accountBadgeStyle}; font-size:9px; padding:2px 6px; border-radius:4px;">${l.account_type}</span>
-                        </td>
-                        <td style="color:#94a3b8; font-size:12px;">@${escapeHtml(l.display_name.toLowerCase())}</td>
-                        <td style="color:#fcd34d; font-weight:900; font-size:16px; text-align:center;">${l.score}</td>
-                        <td><span style="background:rgba(124,58,237,0.2); color:#d8b4fe; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:700;">${escapeHtml(l.stage)}</span></td>
-                        <td><span style="background:rgba(6,182,212,0.2); color:#a5f3fc; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:700;">${escapeHtml(l.theme)}</span></td>
-                        <td style="text-align:center; font-weight:700;">${timeFormatted}</td>
-                        <td style="text-align:center; color:#94a3b8; font-size:13px;">${l.moves !== null ? l.moves : '—'}</td>
-                        <td style="color:#94a3b8; font-size:12px;">${dateAchieved}</td>
-                    </tr>
-                `;
-            }).join('');
+            return `
+            <tr>
+                <td><strong>${l.player_name}</strong><br><span style="font-size:11px;color:#94a3b8;">@${l.player_username}</span></td>
+                <td><span class="badge" style="background:rgba(${isAdd?'16,185,129':'239,68,68'},0.2);color:${color}">${l.action.toUpperCase()}</span></td>
+                <td style="color:${color};font-weight:bold;">${sign}${l.amount} ${icon}</td>
+                <td style="font-size:13px;">${l.reason}</td>
+                <td style="font-size:12px;color:#94a3b8;">${new Date(l.created_at).toLocaleString()}<br>by ${l.admin_name}</td>
+            </tr>
+            `;
+        }).join('');
+    } catch(e) { console.error('Rewards error:', e); }
+}
+
+async function handleRewardAdjustment(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-adjust-reward');
+    
+    const payload = {
+        player_id: parseInt(document.getElementById('reward-player-select').value),
+        action: document.getElementById('reward-action').value,
+        type: document.getElementById('reward-type').value,
+        amount: parseInt(document.getElementById('reward-amount').value),
+        reason: document.getElementById('reward-reason').value
+    };
+
+    if (!payload.player_id) { alert("Please select a player"); return; }
+    
+    const confirmMsg = `Are you sure you want to ${payload.action.toUpperCase()} ${payload.amount} ${payload.type.toUpperCase()} ${payload.action==='add'?'to':'from'} this player?`;
+    if (!confirm(confirmMsg)) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+
+    try {
+        const res = await apiFetch('/admin/rewards/adjust', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+        
+        if (res.success) {
+            alert(`Success! Player now has ${res.new_balance} ${payload.type}.`);
+            document.getElementById('reward-amount').value = '';
+            document.getElementById('reward-reason').value = '';
+            loadRewards(); // refresh lists
+        } else {
+            alert(res.detail || "Adjustment failed");
         }
-        
-        // Populate filter dropdowns (from all available data)
-        populateLeaderboardFilters(data.leaderboard || []);
-        
-    } catch (e) {
-        console.error('Error loading leaderboard:', e);
-        const emptyState = document.getElementById('leaderboard-empty-state');
-        const table = document.getElementById('leaderboard-table');
-        emptyState.style.display = 'block';
-        table.style.display = 'none';
-        emptyState.innerHTML = `<p style="font-size:16px; color:#f87171;">❌ Error loading leaderboard</p><p style="font-size:13px; color:#94a3b8;">${e.message}</p>`;
+    } catch(err) {
+        alert(err.message || "An error occurred");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Apply Adjustment';
     }
 }
 
-function getTrophyEmoji(rank) {
-    const emojis = ['🥇', '🥈', '🥉'];
-    return emojis[rank - 1] || '#' + rank;
+// -----------------------------------------------------------------
+// LEADERBOARD TAB
+// -----------------------------------------------------------------
+async function loadLeaderboard() {
+    try {
+        const data = await apiFetch('/admin/leaderboard');
+        const tbody = document.querySelector('#leaderboard-table tbody');
+        
+        tbody.innerHTML = data.leaderboard.map((l, i) => `
+            <tr>
+                <td style="font-weight:bold;color:#fcd34d;">#${i+1}</td>
+                <td><strong>${l.display_name}</strong><br><span class="badge ${l.account_type.toLowerCase()}" style="font-size:9px;">${l.account_type}</span></td>
+                <td style="font-weight:900;color:#fcd34d;font-size:16px;">${l.score}</td>
+                <td>${l.stage}</td>
+                <td>${l.theme}</td>
+                <td>${l.time_seconds}s</td>
+                <td style="font-size:12px;color:#94a3b8;">${new Date(l.achieved_at).toLocaleDateString()}</td>
+            </tr>
+        `).join('');
+    } catch(e) { console.error('Leaderboard error:', e); }
 }
 
-function formatTime(seconds) {
-    if (!seconds) return '0s';
-    if (seconds < 60) return seconds + 's';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
-}
-
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
-}
-
-function populateLeaderboardFilters(leaderboardData) {
-    const stages = [...new Set(leaderboardData.map(l => l.stage).filter(Boolean))];
-    const themes = [...new Set(leaderboardData.map(l => l.theme).filter(Boolean))];
-    
-    const stageSelect = document.getElementById('lb-filter-stage');
-    const themeSelect = document.getElementById('lb-filter-theme');
-    
-    const currentStage = stageSelect.value;
-    const currentTheme = themeSelect.value;
-    
-    stageSelect.innerHTML = '<option value="">All Stages</option>' + 
-        stages.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-    
-    themeSelect.innerHTML = '<option value="">All Themes</option>' + 
-        themes.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-    
-    stageSelect.value = currentStage;
-    themeSelect.value = currentTheme;
-}
-
-function resetLeaderboardFilters() {
-    document.getElementById('lb-filter-stage').value = '';
-    document.getElementById('lb-filter-theme').value = '';
-    document.getElementById('lb-filter-player').value = '';
-    loadLeaderboard();
-}
-
-let difficultyChartInstance = null;
-let themeChartInstance = null;
+// -----------------------------------------------------------------
+// ANALYTICS TAB
+// -----------------------------------------------------------------
+let playersChart = null;
+let themesChart = null;
 
 async function loadAnalytics() {
-    const data = await fetchAPI('get_analytics');
-    if (data && !data.error) {
-        const diffCtx = document.getElementById('difficultyChart').getContext('2d');
-        const themeCtx = document.getElementById('themeChart').getContext('2d');
-
-        if (difficultyChartInstance) difficultyChartInstance.destroy();
-        if (themeChartInstance) themeChartInstance.destroy();
-
-        // Standard Chart styling for dark mode
+    try {
+        const data = await apiFetch('/admin/analytics');
+        
         Chart.defaults.color = '#cbd5e1';
-        Chart.defaults.borderColor = 'rgba(255,255,255,0.1)';
+        Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
 
-        difficultyChartInstance = new Chart(diffCtx, {
-            type: 'bar',
+        // New Players Chart
+        if (playersChart) playersChart.destroy();
+        const dates = data.new_players.map(d => d.date).reverse();
+        const counts = data.new_players.map(d => d.count).reverse();
+        
+        playersChart = new Chart(document.getElementById('playersChart').getContext('2d'), {
+            type: 'line',
             data: {
-                labels: data.difficulties.map(d => d.stage),
+                labels: dates,
                 datasets: [{
-                    label: 'Games Played',
-                    data: data.difficulties.map(d => d.count),
-                    backgroundColor: 'rgba(124, 58, 237, 0.6)',
-                    borderColor: '#7c3aed',
-                    borderWidth: 1,
-                    borderRadius: 4
+                    label: 'New Registrations',
+                    data: counts,
+                    borderColor: '#06b6d4',
+                    backgroundColor: 'rgba(6,182,212,0.1)',
+                    fill: true,
+                    tension: 0.4
                 }]
             },
             options: { responsive: true, maintainAspectRatio: false }
         });
 
-        themeChartInstance = new Chart(themeCtx, {
+        // Themes Chart
+        if (themesChart) themesChart.destroy();
+        themesChart = new Chart(document.getElementById('themesChart').getContext('2d'), {
             type: 'doughnut',
             data: {
                 labels: data.themes.map(t => t.theme),
                 datasets: [{
                     data: data.themes.map(t => t.count),
-                    backgroundColor: ['#06b6d4', '#a78bfa', '#f59e0b', '#ec4899'],
+                    backgroundColor: ['#7c3aed', '#06b6d4', '#f59e0b', '#ec4899', '#10b981'],
                     borderWidth: 0
                 }]
             },
             options: { responsive: true, maintainAspectRatio: false, cutout: '70%' }
         });
-    }
-}
-
-// Machine Learning Management
-async function checkMLStatus() {
-    const statusEl = document.getElementById('ml-models-status');
-    if (!statusEl) return;
-    try {
-        const res = await fetch(`${PYTHON_API}/ml/status`);
-        const data = await res.json();
-        if (data.models_ready) {
-            statusEl.textContent = 'Operational ✅';
-            statusEl.style.color = '#10b981';
-        } else {
-            statusEl.textContent = 'Initializing... ⏳';
-            statusEl.style.color = '#f59e0b';
-        }
-    } catch (e) {
-        statusEl.textContent = 'Disconnected ❌';
-        statusEl.style.color = '#ef4444';
-    }
-}
-
-async function retrainMLModels() {
-    if (!confirm('This will fetch all real data from the database and re-train the models. This may take a few seconds. Continue?')) return;
-    
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Training... ⏳';
-    
-    try {
-        const res = await fetch(`${PYTHON_API}/ml/train`, { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-            alert(`Success! Models re-trained using ${data.real_samples_used} real samples.`);
-            checkMLStatus();
-        } else {
-            alert('Training failed. Check server logs.');
-        }
-    } catch (e) {
-        alert('Error connecting to ML server.');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
-}
-
-// Initial load
-document.addEventListener('DOMContentLoaded', () => {
-    loadOverview();
-    checkMLStatus();
-
-    // Leaderboard Filter Event Listeners
-    const stageFilter = document.getElementById('lb-filter-stage');
-    const themeFilter = document.getElementById('lb-filter-theme');
-    const playerFilter = document.getElementById('lb-filter-player');
-    
-    if (stageFilter) {
-        stageFilter.addEventListener('change', loadLeaderboard);
-    }
-    if (themeFilter) {
-        themeFilter.addEventListener('change', loadLeaderboard);
-    }
-    if (playerFilter) {
-        playerFilter.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') {
-                loadLeaderboard();
-            }
-        });
-    }
-
-    // Mobile Sidebar Toggle
-    const sidebarToggle = document.getElementById('sidebar-toggle');
-    const sidebar = document.querySelector('.sidebar');
-    
-    if (sidebarToggle && sidebar) {
-        sidebarToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('open');
-        });
         
-        // Close sidebar when clicking outside on mobile
-        document.addEventListener('click', (e) => {
-            if (window.innerWidth <= 768 && 
-                !sidebar.contains(e.target) && 
-                !sidebarToggle.contains(e.target) && 
-                sidebar.classList.contains('open')) {
-                sidebar.classList.remove('open');
-            }
-        });
-        
-        // Close sidebar when a nav link is clicked on mobile
-        document.querySelectorAll('.sidebar .nav-item').forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) {
-                    sidebar.classList.remove('open');
-                }
-            });
-        });
-    }
-});
-
-// Logout Modal Functions
-function confirmLogout() {
-    document.getElementById('logout-modal').style.display = 'block';
-    document.getElementById('logout-modal-overlay').style.display = 'block';
-}
-
-function closeLogoutModal() {
-    document.getElementById('logout-modal').style.display = 'none';
-    document.getElementById('logout-modal-overlay').style.display = 'none';
-}
-
-function confirmDoLogout() {
-    // Navigate back to the main game screen
-    window.location.href = '../index.html';
-}
-
-async function updateAnnouncement() {
-    const inputEl = document.querySelector('.settings-card .auth-input');
-    const message = inputEl.value.trim();
-    if (!message) {
-        alert('Please enter an announcement text.');
-        return;
-    }
-
-    const btn = event.target || document.activeElement;
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Updating...';
-
-    try {
-        const res = await fetch(`${PYTHON_API}/admin/announcement`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message })
-        });
-        const data = await res.json();
-        if (data.success) {
-            alert(`Announcement sent to ${data.notified} users!`);
-            inputEl.value = '';
-        } else {
-            alert(data.detail || 'Failed to send announcement.');
-        }
-    } catch (e) {
-        console.error('Announcement Error:', e);
-        alert('Error connecting to server.');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
-}
-
-async function resetLeaderboard() {
-    if (!confirm('DANGER: This will permanently delete all scores from the leaderboard. Are you absolutely sure?')) return;
-    
-    const btn = event.target || document.activeElement;
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Resetting...';
-
-    try {
-        const res = await fetch(`${PYTHON_API}/admin/leaderboard`, {
-            method: 'DELETE'
-        });
-        const data = await res.json();
-        if (data.success) {
-            alert('Leaderboard has been successfully reset.');
-            loadLeaderboard(); 
-        } else {
-            alert('Failed to reset leaderboard.');
-        }
-    } catch (e) {
-        console.error('Reset Error:', e);
-        alert('Error connecting to server.');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
+    } catch(e) { console.error('Analytics error:', e); }
 }
