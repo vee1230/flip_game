@@ -409,8 +409,10 @@ def retrain_models():
     """Fetch all real scores from DB, blend with synthetic data, re-train."""
     import pandas as pd
     from ml.trainer import train_all, STAGE_DIFFICULTY, THEME_IDX
+    from models.models import load_models
 
     db = get_db()
+    rows = []
     try:
         with db.cursor() as c:
             c.execute("""
@@ -430,7 +432,6 @@ def retrain_models():
         df["score_per_move"] = (df["score"] / df["moves"].clip(1)).round(2)
         df["score_per_sec"]  = (df["score"] / df["time_seconds"].clip(1)).round(2)
 
-        # derive skill label for real data too
         def skill_from_row(r):
             lo = {"Easy":1500,"Medium":2200,"Hard":2800,"Expert":3200}.get(r["stage"],1500)
             hi = {"Easy":2500,"Medium":3200,"Hard":3700,"Expert":4500}.get(r["stage"],4500)
@@ -440,7 +441,6 @@ def retrain_models():
         df["skill_label"] = df.apply(skill_from_row, axis=1)
         extra_df = df
 
-    from ml.models import load_models
     metrics = train_all(extra_df)
     load_models()   # reload fresh models into memory
 
