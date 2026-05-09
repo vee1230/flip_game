@@ -99,6 +99,9 @@ def send_welcome_email(to_email: str, to_name: str) -> bool:
           <p style="margin:0 0 20px; color:rgba(255,255,255,0.65); font-size:15px; line-height:1.6;">
             Your account has been created successfully. You're now part of a growing community of memory champions!
           </p>
+          <p style="margin:0 0 20px; color:rgba(255,255,255,0.5); font-size:13px; font-style:italic; line-height:1.5;">
+            💡 Check mo spam mo or derekta ka nang pumunta sa laro hehe :)
+          </p>
 
           <!-- Play Now Button -->
           <div style="text-align:center; margin:28px 0;">
