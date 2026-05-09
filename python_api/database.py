@@ -137,7 +137,29 @@ def init_db():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
-            # 7. Ensure players columns exist
+            # 7. multiplayer_matches table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS `multiplayer_matches` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `room_id` varchar(100) NOT NULL,
+              `player_1_id` int(11) NOT NULL,
+              `player_2_id` int(11) NOT NULL,
+              `player_1_score` int(11) DEFAULT 0,
+              `player_2_score` int(11) DEFAULT 0,
+              `winner_id` int(11) DEFAULT NULL,
+              `status` enum('waiting','active','completed','disconnected') DEFAULT 'waiting',
+              `started_at` timestamp NULL DEFAULT NULL,
+              `ended_at` timestamp NULL DEFAULT NULL,
+              `duration_seconds` int(11) DEFAULT 0,
+              `disconnected_player_id` int(11) DEFAULT NULL,
+              `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+              `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+              PRIMARY KEY (`id`),
+              KEY `idx_room` (`room_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 8. Ensure players columns exist
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN username varchar(255) DEFAULT NULL")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN password_hash varchar(255) DEFAULT NULL")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN profile_picture varchar(255) DEFAULT NULL")
@@ -145,7 +167,7 @@ def init_db():
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN stars INT(11) NOT NULL DEFAULT 0")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN last_login TIMESTAMP NULL DEFAULT NULL")
 
-            # 8. Auto-seed admin account from env vars (only if not exists)
+            # 9. Auto-seed admin account from env vars (only if not exists)
             admin_username = os.getenv("ADMIN_USERNAME", "yvezjayveegesmundo")
             admin_password = os.getenv("ADMIN_PASSWORD", "thethethe")
             admin_email    = os.getenv("ADMIN_EMAIL", admin_username)

@@ -420,15 +420,226 @@ def notify_announcement(announcement_id: int, admin_id: int = Depends(get_curren
 # ---------------------------------------------------------
 # EXISTING ENDPOINTS MOVED BEHIND JWT AUTH
 # ---------------------------------------------------------
-@router.get("/activities")
-def get_activities(admin_id: int = Depends(get_current_admin)):
+# ---------------------------------------------------------
+# PHASE 3: ANALYTICS & MONITORING ENDPOINTS
+# ---------------------------------------------------------
+@router.get("/analytics/overview")
+def get_analytics_overview(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            stats = {}
+            cursor.execute("SELECT COUNT(*) as c FROM players")
+            stats['total_players'] = cursor.fetchone()['c']
+            
+            cursor.execute("SELECT COUNT(*) as c FROM players WHERE last_login >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
+            stats['active_players'] = cursor.fetchone()['c']
+            
+            cursor.execute("SELECT COUNT(*) as c FROM scores")
+            stats['total_games'] = cursor.fetchone()['c']
+            
+            cursor.execute("SELECT MAX(score) as m FROM scores")
+            stats['highest_score'] = cursor.fetchone()['m'] or 0
+            
+            cursor.execute("SELECT SUM(stars) as s, SUM(trophies) as t FROM players")
+            row = cursor.fetchone()
+            stats['total_stars'] = row['s'] or 0
+            stats['total_trophies'] = row['t'] or 0
+            
+            cursor.execute("SELECT COUNT(*) as c FROM daily_challenges WHERE is_completed = 1")
+            stats['total_daily_challenges'] = cursor.fetchone()['c']
+            
+            cursor.execute("SELECT COUNT(*) as c FROM rewards WHERE reward_status = 'claimed'")
+            stats['total_reward_chests'] = cursor.fetchone()['c']
+            
+            cursor.execute("SELECT COUNT(*) as c FROM reward_announcement_claims WHERE is_claimed = 1")
+            stats['total_bonus_claims'] = cursor.fetchone()['c']
+            
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM multiplayer_matches")
+                stats['total_multiplayer_matches'] = cursor.fetchone()['c']
+                
+                cursor.execute("SELECT COUNT(*) as c FROM multiplayer_matches WHERE status = 'active'")
+                stats['active_multiplayer_matches'] = cursor.fetchone()['c']
+            except Exception:
+                stats['total_multiplayer_matches'] = 0
+                stats['active_multiplayer_matches'] = 0
+            
+            # Push monitoring stats
+            cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
+            stats['tokens_active'] = cursor.fetchone()['c']
+            
+            cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NULL OR fcm_token = ''")
+            stats['tokens_inactive'] = cursor.fetchone()['c']
+            
+            return stats
+    finally:
+        db.close()
+
+@router.get("/analytics/players-per-day")
+def get_players_per_day(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
             cursor.execute("""
-                SELECT a.action_type, a.details, a.created_at, p.display_name 
+                SELECT DATE(created_at) as date, COUNT(*) as count 
+                FROM players 
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY DATE(created_at) 
+                ORDER BY date ASC
+            """)
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.get("/analytics/games-per-day")
+def get_games_per_day(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                SELECT DATE(achieved_at) as date, COUNT(*) as count 
+                FROM scores 
+                WHERE achieved_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY DATE(achieved_at) 
+                ORDER BY date ASC
+            """)
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.get("/analytics/daily-challenges")
+def get_daily_challenges_analytics(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                SELECT date, COUNT(*) as count 
+                FROM daily_challenges 
+                WHERE is_completed = 1 AND date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                GROUP BY date 
+                ORDER BY date ASC
+            """)
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.get("/analytics/reward-claims")
+def get_reward_claims_analytics(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                SELECT DATE(claimed_at) as date, COUNT(*) as count 
+                FROM rewards 
+                WHERE reward_status = 'claimed' AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY DATE(claimed_at) 
+                ORDER BY date ASC
+            """)
+            chests = cursor.fetchall()
+            
+            cursor.execute("""
+                SELECT DATE(claimed_at) as date, COUNT(*) as count 
+                FROM daily_challenges 
+                WHERE is_claimed = 1 AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY DATE(claimed_at) 
+                ORDER BY date ASC
+            """)
+            daily = cursor.fetchall()
+            
+            cursor.execute("""
+                SELECT DATE(claimed_at) as date, COUNT(*) as count 
+                FROM reward_announcement_claims 
+                WHERE is_claimed = 1 AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY DATE(claimed_at) 
+                ORDER BY date ASC
+            """)
+            bonus = cursor.fetchall()
+            
+            return {"chests": chests, "daily": daily, "bonus": bonus}
+    finally:
+        db.close()
+
+@router.get("/analytics/stars-earned")
+def get_stars_earned(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                SELECT DATE(created_at) as date, SUM(amount) as total
+                FROM admin_reward_logs
+                WHERE reward_type = 'stars' AND action = 'add' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY DATE(created_at)
+                ORDER BY date ASC
+            """)
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.get("/analytics/trophies-earned")
+def get_trophies_earned(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                SELECT DATE(created_at) as date, SUM(amount) as total
+                FROM admin_reward_logs
+                WHERE reward_type = 'trophies' AND action = 'add' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY DATE(created_at)
+                ORDER BY date ASC
+            """)
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.get("/analytics/difficulty-usage")
+def get_difficulty_usage(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("SELECT stage, COUNT(*) as count FROM scores GROUP BY stage")
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.get("/analytics/theme-usage")
+def get_theme_usage(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("SELECT theme, COUNT(*) as count FROM scores GROUP BY theme")
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.get("/analytics/multiplayer")
+def get_multiplayer_analytics(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            try:
+                cursor.execute("""
+                    SELECT DATE(started_at) as date, COUNT(*) as count 
+                    FROM multiplayer_matches 
+                    WHERE started_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(started_at) 
+                    ORDER BY date ASC
+                """)
+                return cursor.fetchall()
+            except Exception:
+                return []
+    finally:
+        db.close()
+
+@router.get("/recent-activity")
+def get_recent_activity(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                SELECT a.id, a.action_type, a.details, a.created_at, p.display_name as player_name 
                 FROM activities a 
-                JOIN players p ON a.player_id = p.id 
+                LEFT JOIN players p ON a.player_id = p.id 
                 ORDER BY a.created_at DESC 
                 LIMIT 100
             """)
@@ -436,51 +647,23 @@ def get_activities(admin_id: int = Depends(get_current_admin)):
     finally:
         db.close()
 
-@router.get("/leaderboard")
-def get_leaderboard(admin_id: int = Depends(get_current_admin), limit: int = 100, stage: str = None, theme: str = None):
-    # Same implementation as before, just protected with admin auth
+@router.get("/multiplayer-matches")
+def get_multiplayer_matches(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            where_clause = "WHERE 1=1"
-            params = []
-            if stage:
-                where_clause += " AND s.stage = %s"
-                params.append(stage)
-            if theme:
-                where_clause += " AND s.theme = %s"
-                params.append(theme)
-            
-            query = f"""
-                SELECT p.id as player_id, p.display_name, p.account_type, s.score, s.stage, s.theme,
-                       s.time_seconds, s.moves, s.achieved_at,
-                       ROW_NUMBER() OVER (ORDER BY s.score DESC, s.time_seconds ASC) as rank
-                FROM scores s JOIN players p ON s.player_id = p.id 
-                {where_clause} ORDER BY s.score DESC, s.time_seconds ASC LIMIT %s
-            """
-            params.append(limit)
-            cursor.execute(query, params)
-            leaderboard_data = cursor.fetchall()
-            
-            return {'leaderboard': leaderboard_data, 'total_records': len(leaderboard_data)}
-    finally:
-        db.close()
-
-@router.get("/analytics")
-def get_analytics(admin_id: int = Depends(get_current_admin)):
-    db = get_db()
-    try:
-        with db.cursor() as cursor:
-            cursor.execute("SELECT stage, COUNT(*) as count FROM scores GROUP BY stage")
-            difficulties = cursor.fetchall()
-            cursor.execute("SELECT theme, COUNT(*) as count FROM scores GROUP BY theme")
-            themes = cursor.fetchall()
-            cursor.execute("SELECT DATE(created_at) as date, COUNT(*) as count FROM players GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 30")
-            new_players = cursor.fetchall()
-            return {
-                'difficulties': difficulties,
-                'themes': themes,
-                'new_players': new_players
-            }
+            try:
+                cursor.execute("""
+                    SELECT m.*, p1.display_name as p1_name, p2.display_name as p2_name, w.display_name as winner_name
+                    FROM multiplayer_matches m
+                    LEFT JOIN players p1 ON m.player_1_id = p1.id
+                    LEFT JOIN players p2 ON m.player_2_id = p2.id
+                    LEFT JOIN players w ON m.winner_id = w.id
+                    ORDER BY m.created_at DESC
+                    LIMIT 100
+                """)
+                return cursor.fetchall()
+            except Exception:
+                return []
     finally:
         db.close()

@@ -160,6 +160,8 @@ def login(req: LoginRequest):
                 raise HTTPException(status_code=401, detail="Invalid email/username or password.")
 
             cursor.execute("UPDATE players SET last_login = CURRENT_TIMESTAMP WHERE id = %s", (user["id"],))
+            cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                           (user["id"], 'login', 'User logged in'))
             db.commit()
 
             return {

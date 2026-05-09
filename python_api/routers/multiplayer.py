@@ -13,6 +13,63 @@ router = APIRouter()
 ROUNDS_TO_WIN = 3
 TOTAL_PAIRS = 8
 
+async def log_match_event(event_type: str, room_id: str, p1_uid: str=None, p2_uid: str=None, 
+                          winner_uid: str=None, p1_score: int=0, p2_score: int=0, disconnected_uid: str=None):
+    def _db_op():
+        db = get_db()
+        try:
+            with db.cursor() as cursor:
+                # Resolve numeric IDs
+                def resolve_id(uid):
+                    if not uid: return None
+                    cursor.execute("SELECT id FROM players WHERE id=%s OR google_uid=%s", (uid, uid))
+                    res = cursor.fetchone()
+                    return res['id'] if res else None
+                    
+                if event_type == 'start':
+                    p1_id = resolve_id(p1_uid)
+                    p2_id = resolve_id(p2_uid)
+                    if p1_id and p2_id:
+                        cursor.execute("""
+                            INSERT INTO multiplayer_matches (room_id, player_1_id, player_2_id, status, started_at)
+                            VALUES (%s, %s, %s, 'active', NOW())
+                        """, (room_id, p1_id, p2_id))
+                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                                       (p1_id, 'multiplayer_start', f"Started multiplayer match in room {room_id}"))
+                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                                       (p2_id, 'multiplayer_start', f"Started multiplayer match in room {room_id}"))
+                elif event_type == 'end':
+                    winner_id = resolve_id(winner_uid)
+                    cursor.execute("""
+                        UPDATE multiplayer_matches 
+                        SET status='completed', winner_id=%s, player_1_score=%s, player_2_score=%s, ended_at=NOW(),
+                            duration_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW())
+                        WHERE room_id=%s AND status='active'
+                    """, (winner_id, p1_score, p2_score, room_id))
+                    
+                    if winner_id:
+                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                                       (winner_id, 'multiplayer_win', f"Won multiplayer match in room {room_id}"))
+                elif event_type == 'disconnect':
+                    disc_id = resolve_id(disconnected_uid)
+                    cursor.execute("""
+                        UPDATE multiplayer_matches 
+                        SET status='disconnected', disconnected_player_id=%s, ended_at=NOW(),
+                            duration_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW())
+                        WHERE room_id=%s AND status='active'
+                    """, (disc_id, room_id))
+                    if disc_id:
+                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                                       (disc_id, 'multiplayer_disconnect', f"Disconnected from multiplayer match in room {room_id}"))
+                db.commit()
+        except Exception as e:
+            print(f"[MP Logging Error] {e}")
+        finally:
+            db.close()
+            
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _db_op)
+
 
 class GameSession:
     def __init__(self, room_id: str, p1_uid: str, p2_uid: str,
@@ -186,6 +243,9 @@ class GameSession:
                         "p1_trophies": p1_trophies,
                         "p2_trophies": p2_trophies,
                     })
+                    # Log match end
+                    await log_match_event('end', self.room_id, winner_uid=uid, p1_score=p1_rounds, p2_score=p2_rounds)
+                    
                     # Cleanup handled by manager
                     await manager.cleanup_game(self.room_id)
                 else:
@@ -300,6 +360,7 @@ class ConnectionManager:
             session = self.active_games[room_id]
             other_uid = session.opponent_of(uid)
             await session.send_to(other_uid, {"type": "opponent_disconnected"})
+            await log_match_event('disconnect', room_id, disconnected_uid=uid)
             await self.cleanup_game(room_id)
 
         self.lobby.pop(uid, None)
@@ -382,7 +443,8 @@ class ConnectionManager:
             await session.broadcast({"type": "countdown_update", "seconds_left": i})
             await asyncio.sleep(1.0)
 
-        # Step 3: fire game_start — send board now
+        # Step 3: log match start and fire game_start — send board now
+        await log_match_event('start', session.room_id, p1_uid=session.p1_uid, p2_uid=session.p2_uid)
         await session.broadcast({
             "type": "game_start",
             "board": session.board,

@@ -38,6 +38,12 @@
                 <a href="#analytics" class="nav-item" onclick="switchTab('analytics')">
                     <span class="nav-icon">📈</span> Analytics
                 </a>
+                <a href="#multiplayer" class="nav-item" onclick="switchTab('multiplayer')">
+                    <span class="nav-icon">🎮</span> Multiplayer
+                </a>
+                <a href="#activity_logs" class="nav-item" onclick="switchTab('activity_logs')">
+                    <span class="nav-icon">📋</span> Activity Logs
+                </a>
                 <a href="#" class="nav-item logout-btn" onclick="logout()">
                     <span class="nav-icon">🚪</span> Logout
                 </a>
@@ -80,6 +86,60 @@
                         <div class="stat-info">
                             <h3>Total Trophies</h3>
                             <p class="stat-value" id="stat-total-trophies">0</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="cards-grid" style="margin-top:20px;">
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Total Games Played</h3>
+                            <p class="stat-value" id="stat-total-games">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Highest Score</h3>
+                            <p class="stat-value" id="stat-highest-score">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Daily Challenges</h3>
+                            <p class="stat-value" id="stat-daily-challenges">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Reward Claims (All)</h3>
+                            <p class="stat-value" id="stat-reward-claims">0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cards-grid" style="margin-top:20px;">
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Multiplayer Matches</h3>
+                            <p class="stat-value" id="stat-mp-matches">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Active MP Matches</h3>
+                            <p class="stat-value" id="stat-active-mp-matches">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Push Tokens (Active)</h3>
+                            <p class="stat-value" id="stat-push-active">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <h3>Push Tokens (Inactive)</h3>
+                            <p class="stat-value" id="stat-push-inactive">0</p>
                         </div>
                     </div>
                 </div>
@@ -298,9 +358,70 @@
                         <div class="chart-container"><canvas id="playersChart"></canvas></div>
                     </div>
                     <div class="chart-card">
+                        <h3>Games Played (30 Days)</h3>
+                        <div class="chart-container"><canvas id="gamesChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Multiplayer Matches (30 Days)</h3>
+                        <div class="chart-container"><canvas id="mpChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Reward Claims & Challenges (30 Days)</h3>
+                        <div class="chart-container"><canvas id="claimsChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Stars & Trophies Earned (30 Days)</h3>
+                        <div class="chart-container"><canvas id="currencyChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Popular Difficulties</h3>
+                        <div class="chart-container"><canvas id="difficultyChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
                         <h3>Popular Themes</h3>
                         <div class="chart-container"><canvas id="themesChart"></canvas></div>
                     </div>
+                </div>
+            </section>
+
+            <!-- MULTIPLAYER TAB -->
+            <section id="multiplayer" class="tab-content">
+                <h2>Multiplayer Monitoring</h2>
+                <div class="table-responsive">
+                    <table class="data-table" id="multiplayer-table">
+                        <thead>
+                            <tr>
+                                <th>Match ID</th>
+                                <th>Room ID</th>
+                                <th>Player 1</th>
+                                <th>Player 2</th>
+                                <th>Score (P1 - P2)</th>
+                                <th>Winner</th>
+                                <th>Status</th>
+                                <th>Started At</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ACTIVITY LOGS TAB -->
+            <section id="activity_logs" class="tab-content">
+                <h2>Activity Logs</h2>
+                <div class="table-responsive">
+                    <table class="data-table" id="full-activities-table">
+                        <thead>
+                            <tr>
+                                <th>Player</th>
+                                <th>Action</th>
+                                <th>Details</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
                 </div>
             </section>
 

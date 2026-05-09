@@ -281,8 +281,12 @@ h2 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
 /* Charts */
 .charts-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 24px;
+}
+.charts-grid .chart-card:nth-last-child(-n+1):first-child,
+.charts-grid .chart-card:only-child {
+    grid-column: 1 / -1;
 }
 .chart-card {
     background: var(--bg-panel);
@@ -290,14 +294,30 @@ h2 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
     border-radius: 16px;
     padding: 24px;
 }
+.chart-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+}
 .chart-container {
-    height: 300px;
+    height: 260px;
     width: 100%;
+}
+/* Span full-width for line charts (top 5) */
+.chart-card.wide {
+    grid-column: 1 / -1;
 }
 
 /* Responsive */
+@media (max-width: 1280px) {
+    .charts-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 @media (max-width: 1024px) {
-    .split-layout, .charts-grid { grid-template-columns: 1fr; }
+    .split-layout { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 768px) {

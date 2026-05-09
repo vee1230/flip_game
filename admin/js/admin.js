@@ -67,6 +67,8 @@ function switchTab(tabId) {
     if (tabId === 'announcements') loadAnnouncements();
     if (tabId === 'leaderboard') loadLeaderboard();
     if (tabId === 'analytics') loadAnalytics();
+    if (tabId === 'multiplayer') loadMultiplayer();
+    if (tabId === 'activity_logs') loadActivityLogs();
 }
 
 // -----------------------------------------------------------------
@@ -74,17 +76,26 @@ function switchTab(tabId) {
 // -----------------------------------------------------------------
 async function loadOverview() {
     try {
-        const data = await apiFetch('/admin/overview');
+        const data = await apiFetch('/admin/analytics/overview');
         document.getElementById('stat-total-players').textContent = data.total_players.toLocaleString();
         document.getElementById('stat-active-players').textContent = data.active_players.toLocaleString();
         document.getElementById('stat-total-stars').textContent = data.total_stars.toLocaleString();
         document.getElementById('stat-total-trophies').textContent = data.total_trophies.toLocaleString();
+        document.getElementById('stat-total-games').textContent = data.total_games.toLocaleString();
+        document.getElementById('stat-highest-score').textContent = data.highest_score.toLocaleString();
+        document.getElementById('stat-daily-challenges').textContent = data.total_daily_challenges.toLocaleString();
+        document.getElementById('stat-reward-claims').textContent = (data.total_reward_chests + data.total_bonus_claims).toLocaleString();
+        document.getElementById('stat-mp-matches').textContent = data.total_multiplayer_matches.toLocaleString();
+        document.getElementById('stat-active-mp-matches').textContent = data.active_multiplayer_matches.toLocaleString();
+        document.getElementById('stat-push-active').textContent = data.tokens_active.toLocaleString();
+        document.getElementById('stat-push-inactive').textContent = data.tokens_inactive.toLocaleString();
 
-        const activities = await apiFetch('/admin/activities');
+        const activities = await apiFetch('/admin/recent-activity');
         const tbody = document.querySelector('#activities-table tbody');
-        tbody.innerHTML = activities.map(a => `
+        // Only show top 5 for overview
+        tbody.innerHTML = activities.slice(0, 5).map(a => `
             <tr>
-                <td><strong>${a.display_name}</strong></td>
+                <td><strong>${a.player_name || 'System'}</strong></td>
                 <td><span class="badge" style="background: rgba(255,255,255,0.1);">${a.action_type}</span></td>
                 <td>${a.details || ''}</td>
                 <td style="color:#94a3b8;font-size:12px;">${new Date(a.created_at).toLocaleString()}</td>
@@ -370,51 +381,209 @@ async function sendAnnouncementPush(id) {
 // -----------------------------------------------------------------
 // ANALYTICS TAB
 // -----------------------------------------------------------------
-let playersChart = null;
-let themesChart = null;
+let playersChart = null, gamesChart = null, mpChart = null;
+let claimsChart = null, currencyChart = null;
+let difficultyChart = null, themesChart = null;
+
+const CHART_COLORS = ['#7c3aed','#06b6d4','#f59e0b','#ec4899','#10b981','#3b82f6','#f97316'];
+
+function makeLineDataset(label, data, color) {
+    return { label, data, borderColor: color, backgroundColor: color.replace(')', ', 0.15)').replace('rgb','rgba'), fill: true, tension: 0.4, pointRadius: 3 };
+}
+
+function fillDates(rawData, valueKey='count') {
+    // Build a map of date -> value
+    const map = {};
+    rawData.forEach(r => { map[r.date ? r.date.substring(0,10) : ''] = Number(r[valueKey]) || 0; });
+    const labels = [], values = [];
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        const key = d.toISOString().substring(0,10);
+        labels.push(key);
+        values.push(map[key] || 0);
+    }
+    return { labels, values };
+}
+
+const CHART_OPTIONS = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#cbd5e1', font: { family: 'Outfit' } } } },
+    scales: {
+        x: { ticks: { color: '#64748b', maxTicksLimit: 7, font: { family: 'Outfit' } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#64748b', font: { family: 'Outfit' } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+    }
+};
+const PIE_OPTIONS = {
+    responsive: true, maintainAspectRatio: false, cutout: '65%',
+    plugins: { legend: { labels: { color: '#cbd5e1', font: { family: 'Outfit' }, padding: 16 } } }
+};
 
 async function loadAnalytics() {
     try {
-        const data = await apiFetch('/admin/analytics');
-        
         Chart.defaults.color = '#cbd5e1';
         Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
 
-        // New Players Chart
+        const [ppd, gpd, mp, claims, stars, trophies, diff, themes] = await Promise.all([
+            apiFetch('/admin/analytics/players-per-day'),
+            apiFetch('/admin/analytics/games-per-day'),
+            apiFetch('/admin/analytics/multiplayer'),
+            apiFetch('/admin/analytics/reward-claims'),
+            apiFetch('/admin/analytics/stars-earned'),
+            apiFetch('/admin/analytics/trophies-earned'),
+            apiFetch('/admin/analytics/difficulty-usage'),
+            apiFetch('/admin/analytics/theme-usage'),
+        ]);
+
+        // --- Players Per Day ---
         if (playersChart) playersChart.destroy();
-        const dates = data.new_players.map(d => d.date).reverse();
-        const counts = data.new_players.map(d => d.count).reverse();
-        
-        playersChart = new Chart(document.getElementById('playersChart').getContext('2d'), {
+        const pData = fillDates(ppd);
+        playersChart = new Chart(document.getElementById('playersChart'), {
             type: 'line',
-            data: {
-                labels: dates,
-                datasets: [{
-                    label: 'New Registrations',
-                    data: counts,
-                    borderColor: '#06b6d4',
-                    backgroundColor: 'rgba(6,182,212,0.1)',
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
+            data: { labels: pData.labels, datasets: [makeLineDataset('New Registrations', pData.values, '#06b6d4')] },
+            options: CHART_OPTIONS
         });
 
-        // Themes Chart
-        if (themesChart) themesChart.destroy();
-        themesChart = new Chart(document.getElementById('themesChart').getContext('2d'), {
-            type: 'doughnut',
-            data: {
-                labels: data.themes.map(t => t.theme),
-                datasets: [{
-                    data: data.themes.map(t => t.count),
-                    backgroundColor: ['#7c3aed', '#06b6d4', '#f59e0b', '#ec4899', '#10b981'],
-                    borderWidth: 0
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, cutout: '70%' }
+        // --- Games Per Day ---
+        if (gamesChart) gamesChart.destroy();
+        const gData = fillDates(gpd);
+        gamesChart = new Chart(document.getElementById('gamesChart'), {
+            type: 'bar',
+            data: { labels: gData.labels, datasets: [{ label: 'Games Played', data: gData.values, backgroundColor: 'rgba(139,92,246,0.6)', borderRadius: 6 }] },
+            options: CHART_OPTIONS
         });
-        
+
+        // --- Multiplayer Matches Per Day ---
+        if (mpChart) mpChart.destroy();
+        const mData = fillDates(mp);
+        mpChart = new Chart(document.getElementById('mpChart'), {
+            type: 'bar',
+            data: { labels: mData.labels, datasets: [{ label: 'MP Matches', data: mData.values, backgroundColor: 'rgba(236,72,153,0.6)', borderRadius: 6 }] },
+            options: CHART_OPTIONS
+        });
+
+        // --- Reward Claims ---
+        if (claimsChart) claimsChart.destroy();
+        const cChests = fillDates(claims.chests || []);
+        const cDaily = fillDates(claims.daily || []);
+        const cBonus = fillDates(claims.bonus || []);
+        claimsChart = new Chart(document.getElementById('claimsChart'), {
+            type: 'line',
+            data: {
+                labels: cChests.labels,
+                datasets: [
+                    makeLineDataset('Reward Chests', cChests.values, '#f59e0b'),
+                    makeLineDataset('Daily Challenges', cDaily.values, '#10b981'),
+                    makeLineDataset('Bonus Challenges', cBonus.values, '#7c3aed'),
+                ]
+            },
+            options: CHART_OPTIONS
+        });
+
+        // --- Stars & Trophies Earned ---
+        if (currencyChart) currencyChart.destroy();
+        const sData = fillDates(stars, 'total');
+        const tData = fillDates(trophies, 'total');
+        currencyChart = new Chart(document.getElementById('currencyChart'), {
+            type: 'line',
+            data: {
+                labels: sData.labels,
+                datasets: [
+                    makeLineDataset('Stars Earned ⭐', sData.values, '#f59e0b'),
+                    makeLineDataset('Trophies Earned 🏆', tData.values, '#8b5cf6'),
+                ]
+            },
+            options: CHART_OPTIONS
+        });
+
+        // --- Difficulty Doughnut ---
+        if (difficultyChart) difficultyChart.destroy();
+        difficultyChart = new Chart(document.getElementById('difficultyChart'), {
+            type: 'doughnut',
+            data: { labels: diff.map(d => d.stage), datasets: [{ data: diff.map(d => d.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] },
+            options: PIE_OPTIONS
+        });
+
+        // --- Themes Doughnut ---
+        if (themesChart) themesChart.destroy();
+        themesChart = new Chart(document.getElementById('themesChart'), {
+            type: 'doughnut',
+            data: { labels: themes.map(t => t.theme), datasets: [{ data: themes.map(t => t.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] },
+            options: PIE_OPTIONS
+        });
+
     } catch(e) { console.error('Analytics error:', e); }
 }
+
+// -----------------------------------------------------------------
+// MULTIPLAYER TAB
+// -----------------------------------------------------------------
+function statusBadge(status) {
+    const colors = {
+        active: 'background:rgba(16,185,129,0.2);color:#34d399;',
+        completed: 'background:rgba(59,130,246,0.2);color:#93c5fd;',
+        disconnected: 'background:rgba(239,68,68,0.2);color:#fca5a5;',
+        waiting: 'background:rgba(245,158,11,0.2);color:#fde68a;'
+    };
+    const s = colors[status] || 'background:rgba(148,163,184,0.2);color:#cbd5e1;';
+    return `<span class="badge" style="${s}">${status}</span>`;
+}
+
+async function loadMultiplayer() {
+    try {
+        const matches = await apiFetch('/admin/multiplayer-matches');
+        const tbody = document.querySelector('#multiplayer-table tbody');
+        if (!matches || matches.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#64748b;padding:32px;">No multiplayer matches found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = matches.map(m => `
+            <tr>
+                <td style="color:#64748b;font-size:12px;">#${m.id}</td>
+                <td style="font-family:monospace;font-size:12px;">${m.room_id}</td>
+                <td><strong>${m.p1_name || '—'}</strong></td>
+                <td><strong>${m.p2_name || '—'}</strong></td>
+                <td style="text-align:center;"><strong>${m.player_1_score} — ${m.player_2_score}</strong></td>
+                <td>${m.winner_name ? `<span style="color:#f59e0b;">🏆 ${m.winner_name}</span>` : '—'}</td>
+                <td>${statusBadge(m.status)}</td>
+                <td style="color:#64748b;font-size:12px;">${m.started_at ? new Date(m.started_at).toLocaleString() : '—'}</td>
+                <td style="color:#64748b;font-size:12px;">${m.duration_seconds ? m.duration_seconds + 's' : '—'}</td>
+            </tr>
+        `).join('');
+    } catch(e) { console.error('Multiplayer error:', e); }
+}
+
+// -----------------------------------------------------------------
+// ACTIVITY LOGS TAB
+// -----------------------------------------------------------------
+function actionBadge(type) {
+    const colors = {
+        login: 'background:rgba(59,130,246,0.2);color:#93c5fd;',
+        register: 'background:rgba(16,185,129,0.2);color:#34d399;',
+        multiplayer_start: 'background:rgba(139,92,246,0.2);color:#d8b4fe;',
+        multiplayer_win: 'background:rgba(245,158,11,0.2);color:#fde68a;',
+        multiplayer_disconnect: 'background:rgba(239,68,68,0.2);color:#fca5a5;',
+    };
+    const s = colors[type] || 'background:rgba(148,163,184,0.1);color:#94a3b8;';
+    return `<span class="badge" style="${s}">${type.replace(/_/g,' ')}</span>`;
+}
+
+async function loadActivityLogs() {
+    try {
+        const activities = await apiFetch('/admin/recent-activity');
+        const tbody = document.querySelector('#full-activities-table tbody');
+        if (!activities || activities.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;padding:32px;">No activity found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = activities.map(a => `
+            <tr>
+                <td><strong>${a.player_name || 'System'}</strong></td>
+                <td>${actionBadge(a.action_type)}</td>
+                <td style="color:#cbd5e1;">${a.details || ''}</td>
+                <td style="color:#64748b;font-size:12px;">${new Date(a.created_at).toLocaleString()}</td>
+            </tr>
+        `).join('');
+    } catch(e) { console.error('Activity logs error:', e); }
+}
+
