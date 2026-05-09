@@ -246,6 +246,58 @@ def get_reward_logs(admin_id: int = Depends(get_current_admin)):
 # ---------------------------------------------------------
 # REWARD ANNOUNCEMENTS
 # ---------------------------------------------------------
+
+def send_announcement_push(cursor, announcement_id, title, notification_message, reward_type, reward_amount):
+    cursor.execute("SELECT id, fcm_token FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
+    players = cursor.fetchall()
+    tokens = [p['fcm_token'] for p in players]
+    
+    success_count = 0
+    failure_count = 0
+    
+    print(f"\n--- Sending Push Notification for Announcement {announcement_id} ---")
+    print(f"Title: {title}")
+    print(f"Reward: {reward_amount} {reward_type}")
+    print(f"Found {len(tokens)} valid FCM tokens.")
+    
+    if not tokens:
+        print("No FCM tokens found. Skipping push.")
+        return 0, 0
+        
+    try:
+        title_prefix = "⭐" if reward_type == 'stars' else "🏆"
+        message = messaging.MulticastMessage(
+            notification=messaging.Notification(
+                title=f"{title_prefix} {title}",
+                body=notification_message or f"New bonus challenge available! Earn {reward_amount} {reward_type}."
+            ),
+            tokens=tokens,
+        )
+        response = messaging.send_multicast(message)
+        success_count = response.success_count
+        failure_count = response.failure_count
+        
+        print(f"Push Sent! Success: {success_count}, Failure: {failure_count}")
+        
+        if failure_count > 0:
+            invalid_tokens = []
+            for idx, resp in enumerate(response.responses):
+                if not resp.success:
+                    print(f"Failed token at index {idx}: {resp.exception}")
+                    if resp.exception and getattr(resp.exception, 'code', None) in ['messaging/invalid-registration-token', 'messaging/registration-token-not-registered']:
+                        invalid_tokens.append(tokens[idx])
+            
+            if invalid_tokens:
+                print(f"Removing {len(invalid_tokens)} invalid tokens from database.")
+                format_strings = ','.join(['%s'] * len(invalid_tokens))
+                cursor.execute(f"UPDATE players SET fcm_token = NULL WHERE fcm_token IN ({format_strings})", tuple(invalid_tokens))
+                
+    except Exception as e:
+        print(f"Firebase Admin Error: {str(e)}")
+        
+    print("-----------------------------------------------------------\n")
+    return success_count, failure_count
+
 @router.post("/reward-announcements")
 def create_announcement(req: AnnouncementCreateRequest, admin_id: int = Depends(get_current_admin)):
     if req.reward_amount <= 0:
@@ -267,27 +319,17 @@ def create_announcement(req: AnnouncementCreateRequest, admin_id: int = Depends(
             announcement_id = cursor.lastrowid
             
             # Send push notifications
-            cursor.execute("SELECT fcm_token FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
-            tokens = [row['fcm_token'] for row in cursor.fetchall()]
-            
-            notified_count = 0
-            if tokens:
-                try:
-                    title_prefix = "⭐" if req.reward_type == 'stars' else "🏆"
-                    message = messaging.MulticastMessage(
-                        notification=messaging.Notification(
-                            title=f"{title_prefix} {req.title}",
-                            body=req.notification_message or f"New bonus challenge available! Earn {req.reward_amount} {req.reward_type}."
-                        ),
-                        tokens=tokens,
-                    )
-                    response = messaging.send_multicast(message)
-                    notified_count = response.success_count
-                except Exception as e:
-                    print(f"Failed to send push notifications: {e}")
+            success_count, failure_count = send_announcement_push(
+                cursor, announcement_id, req.title, req.notification_message, req.reward_type, req.reward_amount
+            )
                     
             db.commit()
-            return {"success": True, "id": announcement_id, "notified_count": notified_count}
+            return {
+                "success": True, 
+                "id": announcement_id, 
+                "notification_success_count": success_count,
+                "notification_failure_count": failure_count
+            }
     finally:
         db.close()
 
@@ -362,27 +404,16 @@ def notify_announcement(announcement_id: int, admin_id: int = Depends(get_curren
             if not ann:
                 raise HTTPException(status_code=404, detail="Announcement not found")
                 
-            cursor.execute("SELECT fcm_token FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
-            tokens = [row['fcm_token'] for row in cursor.fetchall()]
+            success_count, failure_count = send_announcement_push(
+                cursor, announcement_id, ann['title'], ann['notification_message'], ann['reward_type'], ann['reward_amount']
+            )
             
-            notified_count = 0
-            if tokens:
-                try:
-                    title_prefix = "⭐" if ann['reward_type'] == 'stars' else "🏆"
-                    message = messaging.MulticastMessage(
-                        notification=messaging.Notification(
-                            title=f"{title_prefix} {ann['title']}",
-                            body=ann['notification_message'] or f"New bonus challenge available! Earn {ann['reward_amount']} {ann['reward_type']}."
-                        ),
-                        tokens=tokens,
-                    )
-                    response = messaging.send_multicast(message)
-                    notified_count = response.success_count
-                except Exception as e:
-                    print(f"Failed to send push notifications: {e}")
-                    raise HTTPException(status_code=500, detail=str(e))
-                    
-            return {"success": True, "notified_count": notified_count}
+            db.commit()
+            return {
+                "success": True, 
+                "notification_success_count": success_count,
+                "notification_failure_count": failure_count
+            }
     finally:
         db.close()
 

@@ -1614,16 +1614,21 @@
       }
       try {
         const permission = await Notification.requestPermission();
+        console.log("Notification permission:", permission);
+        
         if (permission === 'granted') {
           const token = await messaging.getToken({ vapidKey: 'BMBS2xg3H7BS1qYnqmHf3RFPhwQCL-SCQGr6LeTPOyH0eaJnQ9tMaL1CWUzITT_2hEHf6Gdr9ShvyJPSk9OKclw' });
+          console.log("FCM token generated:", token);
+          
           if (token) {
             // Send token to backend
-            await fetch(`${PYTHON_API}/users/fcm-token`, {
+            const response = await fetch(`${PYTHON_API}/users/fcm-token`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ uid: user.id, fcm_token: token })
+              body: JSON.stringify({ uid: user.id.toString(), fcm_token: token })
             });
-            console.log("FCM Token registered.");
+            const resJson = await response.json();
+            console.log("FCM token saved response:", resJson);
           }
         }
       } catch (error) {

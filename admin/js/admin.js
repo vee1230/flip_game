@@ -327,7 +327,7 @@ async function handleAnnouncementSubmit(e) {
         });
         
         if (res.success) {
-            alert(id ? "Updated successfully!" : `Created successfully! Push notifications sent to ${res.notified_count} users.`);
+            alert(id ? "Updated successfully!" : `Created successfully! Push notifications: ${res.notification_success_count} success, ${res.notification_failure_count} failed.`);
             document.getElementById('announcement-modal').style.display = 'none';
             document.getElementById('announcement-form').reset();
             document.getElementById('ann-id').value = '';
@@ -363,7 +363,7 @@ async function sendAnnouncementPush(id) {
     if (!confirm("Send push notification to all players for this announcement?")) return;
     try {
         const res = await apiFetch(`/admin/reward-announcements/${id}/notify`, { method: 'POST' });
-        if (res.success) alert(`Push notification sent to ${res.notified_count} users!`);
+        if (res.success) alert(`Push notifications: ${res.notification_success_count} success, ${res.notification_failure_count} failed.`);
     } catch(e) { alert("Error sending push notification"); }
 }
 
