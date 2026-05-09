@@ -12,13 +12,15 @@ Endpoints:
 """
 
 import numpy as np
+import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from models.models import get_model, models_ready
+from models.models import get_model_safe, models_ready
 from database import get_db
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Shared constants ─────────────────────────────────────────
@@ -112,8 +114,20 @@ def ml_status():
 
 @router.post("/predict-difficulty")
 def predict_difficulty(req: PlayerHistory):
-    model   = get_model("difficulty")
-    le      = get_model("stage_enc")
+    model = get_model_safe("difficulty")
+    le    = get_model_safe("stage_enc")
+
+    if not model or not le:
+        logger.warning("[ML] difficulty model not available — returning fallback")
+        return {
+            "success": True,
+            "source": "fallback",
+            "recommended_stage": "Easy",
+            "confidence_pct": 0,
+            "probabilities": {s: 25.0 for s in STAGES},
+            "reasoning": "ML model not available. Defaulting to Easy mode.",
+            "message": "ML model not available, using default recommendation."
+        }
 
     # Resolve stats
     stats = None
@@ -128,26 +142,37 @@ def predict_difficulty(req: PlayerHistory):
     spm, sps = _derived(int(avg_score), int(avg_time), int(avg_moves))
     theme_num = THEME_IDX.get(last_theme, 0)
 
-    features = np.array([[theme_num, avg_score, avg_time, avg_moves, spm, sps]])
-    pred_idx  = model.predict(features)[0]
-    proba     = model.predict_proba(features)[0]
+    try:
+        features  = np.array([[theme_num, avg_score, avg_time, avg_moves, spm, sps]])
+        pred_idx  = model.predict(features)[0]
+        proba     = model.predict_proba(features)[0]
+        recommended = le.inverse_transform([pred_idx])[0]
+        confidence  = round(float(proba[pred_idx]) * 100, 1)
 
-    recommended = le.inverse_transform([pred_idx])[0]
-    confidence  = round(float(proba[pred_idx]) * 100, 1)
-
-    return {
-        "recommended_stage": recommended,
-        "confidence_pct":    confidence,
-        "probabilities": {
-            stage: round(float(p) * 100, 1)
-            for stage, p in zip(le.classes_, proba)
-        },
-        "reasoning": (
-            f"Based on your average score of {int(avg_score)} "
-            f"in {int(avg_time)}s with {int(avg_moves)} moves, "
-            f"'{recommended}' is the best challenge for your skill level."
-        )
-    }
+        return {
+            "source": "ml",
+            "recommended_stage": recommended,
+            "confidence_pct":    confidence,
+            "probabilities": {
+                stage: round(float(p) * 100, 1)
+                for stage, p in zip(le.classes_, proba)
+            },
+            "reasoning": (
+                f"Based on your average score of {int(avg_score)} "
+                f"in {int(avg_time)}s with {int(avg_moves)} moves, "
+                f"'{recommended}' is the best challenge for your skill level."
+            )
+        }
+    except Exception as e:
+        logger.error(f"[ML] predict_difficulty error: {e}")
+        return {
+            "success": True,
+            "source": "fallback",
+            "recommended_stage": "Easy",
+            "confidence_pct": 0,
+            "reasoning": "ML prediction failed. Defaulting to Easy mode.",
+            "message": "ML model not available, using default recommendation."
+        }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -157,40 +182,47 @@ def predict_difficulty(req: PlayerHistory):
 
 @router.post("/classify-skill")
 def classify_skill(req: GameResult):
-    model = get_model("skill")
-    le    = get_model("skill_enc")
+    model = get_model_safe("skill")
+    le    = get_model_safe("skill_enc")
 
     if req.stage not in STAGE_DIFFICULTY:
         raise HTTPException(status_code=400, detail=f"Invalid stage: {req.stage}")
 
-    stage_num = STAGE_DIFFICULTY[req.stage]
-    theme_num = THEME_IDX.get(req.theme, 0)
-    spm, sps  = _derived(req.score, req.time_seconds, req.moves)
+    if not model or not le:
+        logger.warning("[ML] skill model not available — returning fallback")
+        lo, hi = SCORE_RANGES.get(req.stage, (1500, 4500))
+        eff = round((req.score - lo) / max(hi - lo, 1) * 100, 1)
+        skill = "Expert" if eff >= 70 else ("Intermediate" if eff >= 40 else "Beginner")
+        return {
+            "source": "fallback",
+            "skill_level": skill,
+            "confidence_pct": 0,
+            "efficiency_pct": eff,
+            "probabilities": {},
+            "badge": {"Beginner": "🌱 Novice Player", "Intermediate": "⚡ Rising Star", "Expert": "🏆 Master Player"}.get(skill, skill),
+            "message": "ML model not available, using score-based classification."
+        }
 
-    features  = np.array([[stage_num, theme_num, req.score,
-                            req.time_seconds, req.moves, spm, sps]])
-    pred_idx  = model.predict(features)[0]
-    proba     = model.predict_proba(features)[0]
-    skill     = le.inverse_transform([pred_idx])[0]
-    confidence = round(float(proba[pred_idx]) * 100, 1)
-
-    lo, hi = SCORE_RANGES[req.stage]
-    efficiency = round((req.score - lo) / max(hi - lo, 1) * 100, 1)
-
-    return {
-        "skill_level":    skill,
-        "confidence_pct": confidence,
-        "efficiency_pct": efficiency,
-        "probabilities": {
-            s: round(float(p) * 100, 1)
-            for s, p in zip(le.classes_, proba)
-        },
-        "badge": {
-            "Beginner":     "🌱 Novice Player",
-            "Intermediate": "⚡ Rising Star",
-            "Expert":       "🏆 Master Player",
-        }.get(skill, skill)
-    }
+    try:
+        stage_num = STAGE_DIFFICULTY[req.stage]
+        theme_num = THEME_IDX.get(req.theme, 0)
+        spm, sps  = _derived(req.score, req.time_seconds, req.moves)
+        features  = np.array([[stage_num, theme_num, req.score, req.time_seconds, req.moves, spm, sps]])
+        pred_idx  = model.predict(features)[0]
+        proba     = model.predict_proba(features)[0]
+        skill     = le.inverse_transform([pred_idx])[0]
+        confidence = round(float(proba[pred_idx]) * 100, 1)
+        lo, hi    = SCORE_RANGES[req.stage]
+        efficiency = round((req.score - lo) / max(hi - lo, 1) * 100, 1)
+        return {
+            "source": "ml",
+            "skill_level": skill, "confidence_pct": confidence, "efficiency_pct": efficiency,
+            "probabilities": {s: round(float(p) * 100, 1) for s, p in zip(le.classes_, proba)},
+            "badge": {"Beginner": "🌱 Novice Player", "Intermediate": "⚡ Rising Star", "Expert": "🏆 Master Player"}.get(skill, skill)
+        }
+    except Exception as e:
+        logger.error(f"[ML] classify_skill error: {e}")
+        return {"source": "fallback", "skill_level": "Intermediate", "confidence_pct": 0, "efficiency_pct": 0, "probabilities": {}, "badge": "⚡ Rising Star"}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -208,44 +240,48 @@ class ScorePredictRequest(BaseModel):
 
 @router.post("/predict-score")
 def predict_score(req: ScorePredictRequest):
-    model = get_model("score")
+    model = get_model_safe("score")
 
     if req.stage not in STAGE_DIFFICULTY:
         raise HTTPException(status_code=400, detail=f"Invalid stage: {req.stage}")
 
-    # Resolve player history for better defaults
-    time_s = req.estimated_time
-    moves  = req.estimated_moves
-
-    if req.player_id and (not time_s or not moves):
-        stats = _fetch_player_stats(req.player_id)
-        if stats:
-            time_s = time_s or int(stats["avg_time"])
-            moves  = moves  or int(stats["avg_moves"])
-
-    stage_num = STAGE_DIFFICULTY[req.stage]
-    theme_num = THEME_IDX.get(req.theme, 0)
-    time_s    = time_s or 30
-    moves     = moves  or 10
-
-    features = np.array([[stage_num, theme_num, time_s, moves]])
-    predicted = int(model.predict(features)[0])
-
     lo, hi = SCORE_RANGES[req.stage]
-    predicted = max(lo, min(hi, predicted))  # clamp to range
 
-    return {
-        "predicted_score":  predicted,
-        "stage":            req.stage,
-        "theme":            req.theme,
-        "score_range":      {"min": lo, "max": hi},
-        "estimated_time_s": time_s,
-        "estimated_moves":  moves,
-        "message": (
-            f"If you play {req.stage} ({req.theme}) in ~{time_s}s "
-            f"with ~{moves} moves, you're predicted to score {predicted} points."
-        )
-    }
+    if not model:
+        logger.warning("[ML] score model not available — returning fallback")
+        return {
+            "source": "fallback",
+            "predicted_score": (lo + hi) // 2,
+            "stage": req.stage, "theme": req.theme,
+            "score_range": {"min": lo, "max": hi},
+            "message": "ML model not available, using average score estimate."
+        }
+
+    try:
+        time_s = req.estimated_time
+        moves  = req.estimated_moves
+        if req.player_id and (not time_s or not moves):
+            stats = _fetch_player_stats(req.player_id)
+            if stats:
+                time_s = time_s or int(stats["avg_time"])
+                moves  = moves  or int(stats["avg_moves"])
+        stage_num = STAGE_DIFFICULTY[req.stage]
+        theme_num = THEME_IDX.get(req.theme, 0)
+        time_s    = time_s or 30
+        moves     = moves  or 10
+        features  = np.array([[stage_num, theme_num, time_s, moves]])
+        predicted = int(model.predict(features)[0])
+        predicted = max(lo, min(hi, predicted))
+        return {
+            "source": "ml",
+            "predicted_score": predicted, "stage": req.stage, "theme": req.theme,
+            "score_range": {"min": lo, "max": hi},
+            "estimated_time_s": time_s, "estimated_moves": moves,
+            "message": f"If you play {req.stage} ({req.theme}) in ~{time_s}s with ~{moves} moves, you're predicted to score {predicted} points."
+        }
+    except Exception as e:
+        logger.error(f"[ML] predict_score error: {e}")
+        return {"source": "fallback", "predicted_score": (lo + hi) // 2, "stage": req.stage, "theme": req.theme, "score_range": {"min": lo, "max": hi}}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -255,19 +291,12 @@ def predict_score(req: ScorePredictRequest):
 
 @router.post("/detect-cheat")
 def detect_cheat(req: GameResult):
-    model = get_model("cheat")
+    model = get_model_safe("cheat")
 
-    spm, sps = _derived(req.score, req.time_seconds, req.moves)
-    features = np.array([[req.score, req.time_seconds, req.moves, spm, sps]])
-    result   = model.predict(features)[0]    # -1 = anomaly, 1 = normal
-    score_f  = float(model.decision_function(features)[0])
-
-    is_cheating  = (result == -1)
-    anomaly_score = round(score_f, 4)
-
-    # Rule-based sanity checks on top of ML
+    # Rule-based checks always run regardless of ML
     flags = []
     lo, hi = SCORE_RANGES.get(req.stage, (1000, 5000))
+    spm, sps = _derived(req.score, req.time_seconds, req.moves)
     if req.score > hi * 1.15:
         flags.append("Score exceeds stage maximum by >15%")
     if req.time_seconds < 5:
@@ -277,20 +306,37 @@ def detect_cheat(req: GameResult):
     if req.score > 0 and req.time_seconds > 0 and sps > 300:
         flags.append("Score-per-second ratio is unrealistically high")
 
-    final_flag = is_cheating or len(flags) > 0
+    if not model:
+        logger.warning("[ML] cheat model not available — using rule-based only")
+        final_flag = len(flags) > 0
+        return {
+            "source": "rules_only",
+            "is_suspicious": final_flag,
+            "ml_anomaly": False,
+            "anomaly_score": 0,
+            "rule_flags": flags,
+            "verdict": "🚨 SUSPICIOUS" if final_flag else "✅ NORMAL",
+            "details": "ML model unavailable. Rule-based checks only."
+        }
 
-    return {
-        "is_suspicious":  final_flag,
-        "ml_anomaly":     is_cheating,
-        "anomaly_score":  anomaly_score,
-        "rule_flags":     flags,
-        "verdict":        "🚨 SUSPICIOUS" if final_flag else "✅ NORMAL",
-        "details": (
-            "This game result has been flagged for review."
-            if final_flag else
-            "This game result appears legitimate."
-        )
-    }
+    try:
+        features  = np.array([[req.score, req.time_seconds, req.moves, spm, sps]])
+        result    = model.predict(features)[0]
+        score_f   = float(model.decision_function(features)[0])
+        is_cheating   = (result == -1)
+        anomaly_score = round(score_f, 4)
+        final_flag = is_cheating or len(flags) > 0
+        return {
+            "source": "ml",
+            "is_suspicious": final_flag, "ml_anomaly": is_cheating, "anomaly_score": anomaly_score,
+            "rule_flags": flags,
+            "verdict": "🚨 SUSPICIOUS" if final_flag else "✅ NORMAL",
+            "details": "This game result has been flagged for review." if final_flag else "This game result appears legitimate."
+        }
+    except Exception as e:
+        logger.error(f"[ML] detect_cheat error: {e}")
+        final_flag = len(flags) > 0
+        return {"source": "fallback", "is_suspicious": final_flag, "ml_anomaly": False, "rule_flags": flags, "verdict": "🚨 SUSPICIOUS" if final_flag else "✅ NORMAL"}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -306,41 +352,52 @@ class RecommendRequest(BaseModel):
 
 @router.post("/recommend-theme")
 def recommend_theme(req: RecommendRequest):
-    model = get_model("theme")
-    le    = get_model("theme_enc")
+    model = get_model_safe("theme")
+    le    = get_model_safe("theme_enc")
 
     if req.stage not in STAGE_DIFFICULTY:
         raise HTTPException(status_code=400, detail=f"Invalid stage: {req.stage}")
 
-    stats = None
-    if req.player_id:
-        stats = _fetch_player_stats(req.player_id)
+    if not model or not le:
+        logger.warning("[ML] theme model not available — returning fallback")
+        return {
+            "success": True,
+            "source": "fallback",
+            "recommended_theme": "Animals",
+            "top_3_themes": [
+                {"theme": "Animals", "confidence_pct": 0},
+                {"theme": "Food",    "confidence_pct": 0},
+                {"theme": "Space",   "confidence_pct": 0},
+            ],
+            "stage": req.stage,
+            "message": "ML model not available, using default recommendation."
+        }
 
-    avg_score = stats["avg_score"] if stats else (req.avg_score or 2500)
-    avg_time  = stats["avg_time"]  if stats else (req.avg_time  or 30)
-    avg_moves = stats["avg_moves"] if stats else 10
-
-    stage_num = STAGE_DIFFICULTY[req.stage]
-    _, sps    = _derived(int(avg_score), int(avg_time), int(avg_moves))
-
-    # Get top-3 theme recommendations using KNN probabilities
-    proba     = model.predict_proba([[stage_num, 0, sps]])[0]
-    top3_idx  = np.argsort(proba)[::-1][:3]
-    top3      = [
-        {"theme": le.inverse_transform([i])[0], "confidence_pct": round(float(proba[i]) * 100, 1)}
-        for i in top3_idx
-    ]
-    best = top3[0]["theme"]
-
-    return {
-        "recommended_theme": best,
-        "top_3_themes":      top3,
-        "stage":             req.stage,
-        "message": (
-            f"For {req.stage} difficulty, '{best}' is the best theme "
-            f"match for your play style!"
-        )
-    }
+    try:
+        stats = None
+        if req.player_id:
+            stats = _fetch_player_stats(req.player_id)
+        avg_score = stats["avg_score"] if stats else (req.avg_score or 2500)
+        avg_time  = stats["avg_time"]  if stats else (req.avg_time  or 30)
+        avg_moves = stats["avg_moves"] if stats else 10
+        stage_num = STAGE_DIFFICULTY[req.stage]
+        _, sps    = _derived(int(avg_score), int(avg_time), int(avg_moves))
+        proba     = model.predict_proba([[stage_num, 0, sps]])[0]
+        top3_idx  = np.argsort(proba)[::-1][:3]
+        top3      = [{"theme": le.inverse_transform([i])[0], "confidence_pct": round(float(proba[i]) * 100, 1)} for i in top3_idx]
+        best = top3[0]["theme"]
+        return {
+            "source": "ml",
+            "recommended_theme": best, "top_3_themes": top3, "stage": req.stage,
+            "message": f"For {req.stage} difficulty, '{best}' is the best theme match for your play style!"
+        }
+    except Exception as e:
+        logger.error(f"[ML] recommend_theme error: {e}")
+        return {
+            "source": "fallback", "recommended_theme": "Animals",
+            "top_3_themes": [{"theme": "Animals", "confidence_pct": 0}],
+            "stage": req.stage, "message": "ML model not available, using default recommendation."
+        }
 
 
 # ─────────────────────────────────────────────────────────────

@@ -35,13 +35,18 @@ def load_models():
 
 
 def get_model(name: str):
-    """Return a loaded model by key. Raises KeyError if not loaded."""
+    """Return a loaded model by key. Raises RuntimeError if not loaded."""
     if name not in _cache:
         raise RuntimeError(
             f"Model '{name}' is not loaded. "
             "Did you run the trainer first? (python -m ml.trainer)"
         )
     return _cache[name]
+
+
+def get_model_safe(name: str):
+    """Return a loaded model by key, or None if not available. Never raises."""
+    return _cache.get(name, None)
 
 
 def models_ready() -> bool:
