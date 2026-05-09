@@ -1,6 +1,13 @@
 # Environment variables (NEVER upload to GitHub!)
 .env
 .env.*
+.env.local
+.env.production
+
+# Sensitive Credentials
+firebase_service_account.json
+python_api/firebase_service_account.json
+*.key
 
 # Python cache
 __pycache__/

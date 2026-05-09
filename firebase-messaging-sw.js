@@ -18,7 +18,9 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
     body: payload.notification.body,
-    icon: "/icons/icon-192.png" // Replace with your icon
+    icon: "./assets/icons/icon-192.png", // Corrected icon path
+    badge: "./assets/icons/icon-192.png",
+    vibrate: [200, 100, 200]
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);

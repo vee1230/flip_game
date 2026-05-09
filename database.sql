@@ -44,4 +44,21 @@ CREATE TABLE IF NOT EXISTS `activities` (
   FOREIGN KEY (`player_id`) REFERENCES `players`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `daily_challenges` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `player_id` int(11) NOT NULL,
+  `date` date NOT NULL,
+  `is_completed` tinyint(1) NOT NULL DEFAULT 0,
+  `is_claimed` tinyint(1) NOT NULL DEFAULT 0,
+  `matched_pairs` int(11) DEFAULT 0,
+  `completed_at` timestamp NULL DEFAULT NULL,
+  `claimed_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `player_date_unique` (`player_id`, `date`),
+  FOREIGN KEY (`player_id`) REFERENCES `players`(`id`) ON DELETE CASCADE,
+  INDEX idx_player_date (player_id, date),
+  INDEX idx_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE INDEX idx_player_trophies ON players(trophies);

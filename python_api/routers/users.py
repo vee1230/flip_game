@@ -89,3 +89,24 @@ def get_trophies(uid: str):
     finally:
         db.close()
 
+
+class FCMTokenUpdate(BaseModel):
+    uid: str
+    fcm_token: str
+
+
+@router.post("/fcm-token")
+def update_fcm_token(body: FCMTokenUpdate):
+    """Save the Firebase Cloud Messaging token for a player."""
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute(
+                "UPDATE players SET fcm_token=%s WHERE id=%s OR google_uid=%s",
+                (body.fcm_token, body.uid, body.uid)
+            )
+            db.commit()
+            return {"success": True}
+    finally:
+        db.close()
+

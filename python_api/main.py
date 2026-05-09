@@ -12,9 +12,10 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, admin, notifications, scores, ml, users, multiplayer, rewards
+from routers import auth, admin, notifications, scores, ml, users, multiplayer, rewards, cron
 from models.models import load_models
 from database import init_db
+from firebase_config import init_firebase
 
 app = FastAPI(
     title="Memory Match Puzzle API",
@@ -29,6 +30,10 @@ def startup_event():
         init_db()
     except Exception as e:
         print(f"Warning: Database initialization failed (non-fatal): {e}")
+    try:
+        init_firebase()
+    except Exception as e:
+        print(f"Warning: Firebase Admin initialization failed (non-fatal): {e}")
     try:
         load_models()
     except Exception as e:
@@ -64,6 +69,7 @@ app.include_router(admin.router,         prefix="/api/v1/admin",         tags=["
 app.include_router(ml.router,            prefix="/api/v1/ml",            tags=["Machine Learning"])
 app.include_router(multiplayer.router,   prefix="/api/v1/multiplayer",   tags=["Multiplayer"])
 app.include_router(rewards.router,       prefix="/api/v1/rewards",       tags=["Rewards"])
+app.include_router(cron.router,          prefix="/api/v1/cron",          tags=["Cron Jobs"])
 
 
 @app.get("/", tags=["Root"])
