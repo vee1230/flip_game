@@ -41,15 +41,16 @@ export async function initDailyChallenge() {
  */
 async function getDailyChallengeStatus() {
   const currentUser = window.currentUser || JSON.parse(localStorage.getItem('mmPuzzleSession') || '{}');
+  const playerId = currentUser.id || currentUser.uid;
   
-  if (!currentUser.id) {
+  if (!playerId) {
     // Not logged in, use guest localStorage
     return getLocalDailyChallengeStatus();
   }
 
   try {
     // Fetch from backend
-    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/status/${currentUser.id}`);
+    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/status/${playerId}`);
     if (!response.ok) throw new Error('Failed to fetch status');
     
     const data = await response.json();
@@ -342,8 +343,9 @@ export async function markChallengeCompleted() {
 
   try {
     const currentUser = window.currentUser || JSON.parse(localStorage.getItem('mmPuzzleSession') || '{}');
+    const playerId = currentUser.id || currentUser.uid;
     
-    if (!currentUser.id) {
+    if (!playerId) {
       // Guest user - just update localStorage
       const status = JSON.parse(localStorage.getItem(DAILY_CHALLENGE_STATUS_KEY) || '{}');
       status.is_completed = true;
@@ -354,7 +356,7 @@ export async function markChallengeCompleted() {
     }
 
     // Authenticated user - send to backend
-    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/complete/${currentUser.id}`, {
+    const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/complete/${playerId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -387,12 +389,20 @@ export async function markChallengeCompleted() {
 async function claimDailyReward() {
   try {
     const currentUser = window.currentUser || JSON.parse(localStorage.getItem('mmPuzzleSession') || '{}');
+    const playerId = currentUser.id || currentUser.uid;
     
-    if (!currentUser.id) {
+    if (!playerId) {
       // Guest user - just update localStorage visually
       const status = JSON.parse(localStorage.getItem(DAILY_CHALLENGE_STATUS_KEY) || '{}');
       status.is_claimed = true;
       localStorage.setItem(DAILY_CHALLENGE_STATUS_KEY, JSON.stringify(status));
+      
+      currentUser.stars = (currentUser.stars || 0) + 50;
+      localStorage.setItem('mmPuzzleSession', JSON.stringify(currentUser));
+      if (typeof window.updateStarsDisplay === 'function') {
+        window.updateStarsDisplay();
+      }
+      
       showRewardClaimedAnimation();
       closeDailyChallengeModal();
       updateDailyChallengeUI(status);
@@ -403,7 +413,7 @@ async function claimDailyReward() {
     const response = await fetch(`${window.CONFIG?.PYTHON_API || 'http://localhost:8000/api/v1'}/daily-challenge/claim`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ player_id: currentUser.id })
+      body: JSON.stringify({ player_id: playerId })
     });
 
     if (response.ok) {
@@ -516,7 +526,7 @@ export function updateGameOverModalWithChallengeStatus(modalId) {
   // Insert challenge status message in modal
   let message = '';
   if (window.dailyChallengeCompleted) {
-    message = `<div style="color:#10b981; margin-top:12px; padding:8px; background:rgba(16,185,129,0.1); border-radius:8px; font-weight:700;">✅ Daily Challenge Completed! Ready to claim +50 Stars</div>`;
+    message = `<div onclick="window._claimDailyChallengeReward(); this.style.pointerEvents='none'; this.style.opacity='0.5';" style="color:#10b981; margin-top:12px; padding:12px; background:rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); border-radius:8px; font-weight:700; cursor:pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">✅ Daily Challenge Completed! Click here to claim +50 Stars ⭐</div>`;
   } else {
     const matched = window.dailyChallengeMatches || 0;
     const required = DAILY_CHALLENGE_CONFIG.requiredMatches;
