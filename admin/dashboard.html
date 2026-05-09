@@ -29,6 +29,9 @@
                 <a href="#rewards" class="nav-item" onclick="switchTab('rewards')">
                     <span class="nav-icon">🎁</span> Rewards
                 </a>
+                <a href="#announcements" class="nav-item" onclick="switchTab('announcements')">
+                    <span class="nav-icon">📢</span> Announcements
+                </a>
                 <a href="#leaderboard" class="nav-item" onclick="switchTab('leaderboard')">
                     <span class="nav-icon">🏆</span> Leaderboard
                 </a>
@@ -184,6 +187,83 @@
                                 <tbody></tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ANNOUNCEMENTS TAB -->
+            <section id="announcements" class="tab-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2>Bonus Challenges & Announcements</h2>
+                    <button class="btn-primary" style="width:auto; padding:8px 16px;" onclick="document.getElementById('announcement-modal').style.display='flex'">+ Create New</button>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="data-table" id="announcements-table">
+                        <thead>
+                            <tr>
+                                <th>Title & Task</th>
+                                <th>Reward</th>
+                                <th>Dates</th>
+                                <th>Status</th>
+                                <th>Claims</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <!-- Create/Edit Modal -->
+                <div id="announcement-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:100; justify-content:center; align-items:center; padding:20px;">
+                    <div class="panel" style="width:100%; max-width:600px; max-height:90vh; overflow-y:auto; position:relative;">
+                        <button onclick="document.getElementById('announcement-modal').style.display='none'" style="position:absolute; right:20px; top:20px; background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:20px;">✕</button>
+                        <h3 id="announcement-modal-title">Create Bonus Challenge</h3>
+                        <form id="announcement-form" style="margin-top:20px;" onsubmit="handleAnnouncementSubmit(event)">
+                            <input type="hidden" id="ann-id" value="">
+                            
+                            <div class="input-group">
+                                <label>Title</label>
+                                <input type="text" id="ann-title" class="form-input" required placeholder="e.g. Weekend Warrior">
+                            </div>
+                            
+                            <div class="input-group">
+                                <label>Task Description (for players to see)</label>
+                                <textarea id="ann-task" class="form-input" required placeholder="e.g. Play 5 games on Hard mode" style="min-height:80px; resize:vertical;"></textarea>
+                            </div>
+                            
+                            <div style="display:flex; gap:16px;">
+                                <div class="input-group" style="flex:1;">
+                                    <label>Reward Type</label>
+                                    <select id="ann-reward-type" class="form-input" required>
+                                        <option value="stars">Stars ⭐</option>
+                                        <option value="trophies">Trophies 🏆</option>
+                                    </select>
+                                </div>
+                                <div class="input-group" style="flex:1;">
+                                    <label>Reward Amount</label>
+                                    <input type="number" id="ann-reward-amount" class="form-input" required min="1" placeholder="e.g. 100">
+                                </div>
+                            </div>
+                            
+                            <div style="display:flex; gap:16px;">
+                                <div class="input-group" style="flex:1;">
+                                    <label>Start Date</label>
+                                    <input type="datetime-local" id="ann-start" class="form-input" required>
+                                </div>
+                                <div class="input-group" style="flex:1;">
+                                    <label>End Date</label>
+                                    <input type="datetime-local" id="ann-end" class="form-input" required>
+                                </div>
+                            </div>
+                            
+                            <div class="input-group">
+                                <label>Push Notification Message (optional)</label>
+                                <input type="text" id="ann-notification" class="form-input" placeholder="e.g. A new challenge has arrived! Earn 100 Stars!">
+                            </div>
+                            
+                            <button type="submit" class="btn-primary" id="btn-save-announcement">Publish Challenge</button>
+                        </form>
                     </div>
                 </div>
             </section>

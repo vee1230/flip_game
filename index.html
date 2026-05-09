@@ -447,15 +447,8 @@
       <h1 class="home-title">Memory Match<br>Puzzle</h1>
       <p class="home-subtitle">Flip cards • Find pairs • Beat the clock</p>
     </div>
-    <!-- ── EVENT BANNER (dynamic) ── -->
-    <div class="home-event-banner" id="home-event-banner" onclick="startGame()">
-      <span class="event-icon" id="event-icon"></span>
-      <div class="event-info">
-        <div class="event-title" id="event-title">Weekend Challenge</div>
-        <div class="event-desc" id="event-desc">Play 3 games on Hard to earn bonus stars!</div>
-      </div>
-      <span class="event-badge" id="event-badge">Live</span>
-    </div>
+    <!-- ── ACTIVE ANNOUNCEMENTS BANNER ── -->
+    <div id="active-announcements-container"></div>
     <!-- ── REWARD CHEST ── -->
     <div class="reward-chest-section" id="reward-chest-section" style="display:none;">
       <div class="reward-chest-card inactive" id="reward-chest-card" onclick="claimReward()">
@@ -1646,6 +1639,88 @@
       }
     }
 
+    async function fetchActiveAnnouncements() {
+      if (!currentUser || currentUser.type === 'guest') return;
+      const container = document.getElementById('active-announcements-container');
+      if (!container) return;
+      
+      try {
+        const res = await fetch(`${PYTHON_API}/rewards/announcements/active/${currentUser.id}`);
+        const announcements = await res.json();
+        
+        if (announcements && announcements.length > 0) {
+          container.innerHTML = announcements.map(ann => {
+            const icon = ann.reward_type === 'stars' ? '⭐' : '🏆';
+            const claimedHTML = ann.is_claimed 
+              ? `<span class="event-badge" style="background:var(--bg-card);color:var(--text-secondary);">Claimed</span>`
+              : `<button class="event-badge" style="border:none; cursor:pointer;" onclick="claimAnnouncement(event, ${ann.id})">Claim ${ann.reward_amount}${icon}</button>`;
+              
+            return `
+              <div class="home-event-banner" style="margin-bottom:12px; cursor:default;" data-id="${ann.id}">
+                <span class="event-icon">${icon}</span>
+                <div class="event-info">
+                  <div class="event-title">${ann.title}</div>
+                  <div class="event-desc">${ann.task_description}</div>
+                </div>
+                ${claimedHTML}
+              </div>
+            `;
+          }).join('');
+        } else {
+          container.innerHTML = '';
+        }
+      } catch (e) {
+        console.error("Failed to fetch active announcements:", e);
+      }
+    }
+
+    async function claimAnnouncement(e, id) {
+      e.stopPropagation();
+      if (!currentUser || currentUser.type === 'guest') return;
+      
+      const btn = e.target;
+      btn.disabled = true;
+      btn.textContent = 'Claiming...';
+      
+      try {
+        const res = await fetch(`${PYTHON_API}/rewards/announcements/${id}/claim`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player_id: currentUser.id })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+          showToast(data.message, 'success');
+          
+          // Update local state
+          if (data.reward_type === 'stars') {
+             currentUser.stars = data.new_balance;
+             updateStarsDisplay();
+          } else if (data.reward_type === 'trophies') {
+             currentUser.trophies = data.new_balance;
+             const tr = document.getElementById('home-trophies-value');
+             if(tr) tr.textContent = data.new_balance;
+          }
+          
+          localStorage.setItem(SESS_KEY, JSON.stringify(currentUser));
+          
+          // Refresh list to show Claimed button
+          fetchActiveAnnouncements();
+        } else {
+          showToast(data.detail || 'Failed to claim reward', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Claim';
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Network error while claiming', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Claim';
+      }
+    }
+
     function setSession(user) {
       currentUser = user;
       localStorage.setItem(SESS_KEY, JSON.stringify(user));
@@ -1657,6 +1732,8 @@
       if (user && user.type !== 'guest') {
         requestPushNotificationPermission(user);
       }
+      
+      fetchActiveAnnouncements();
     }
     function clearSession() {
       currentUser = null;

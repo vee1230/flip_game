@@ -64,6 +64,7 @@ function switchTab(tabId) {
     if (tabId === 'overview') loadOverview();
     if (tabId === 'users') loadPlayers();
     if (tabId === 'rewards') loadRewards();
+    if (tabId === 'announcements') loadAnnouncements();
     if (tabId === 'leaderboard') loadLeaderboard();
     if (tabId === 'analytics') loadAnalytics();
 }
@@ -231,6 +232,139 @@ async function loadLeaderboard() {
             </tr>
         `).join('');
     } catch(e) { console.error('Leaderboard error:', e); }
+}
+
+// -----------------------------------------------------------------
+// ANNOUNCEMENTS TAB
+// -----------------------------------------------------------------
+async function loadAnnouncements() {
+    try {
+        const data = await apiFetch('/admin/reward-announcements');
+        const tbody = document.querySelector('#announcements-table tbody');
+        
+        tbody.innerHTML = data.map(a => {
+            const isActive = a.status === 'active';
+            const statusColor = isActive ? 'var(--success)' : 'var(--text-secondary)';
+            const icon = a.reward_type === 'stars' ? '⭐' : '🏆';
+            
+            return `
+            <tr>
+                <td><strong>${a.title}</strong><br><span style="font-size:12px;color:#94a3b8;">${a.task_description}</span></td>
+                <td style="font-weight:bold;color:#fcd34d;">${a.reward_amount} ${icon}</td>
+                <td style="font-size:12px;color:#94a3b8;">
+                    Start: ${new Date(a.start_date).toLocaleString()}<br>
+                    End: ${new Date(a.end_date).toLocaleString()}
+                </td>
+                <td>
+                    <select onchange="toggleAnnouncementStatus(${a.id}, this.value)" style="background:rgba(0,0,0,0.3); color:${statusColor}; border:1px solid ${statusColor}; padding:4px 8px; border-radius:4px; outline:none;">
+                        <option value="active" ${isActive ? 'selected' : ''}>Active</option>
+                        <option value="inactive" ${!isActive ? 'selected' : ''}>Inactive</option>
+                    </select>
+                </td>
+                <td style="font-weight:bold;">${a.total_claims || 0}</td>
+                <td>
+                    <button class="btn-primary" style="padding:6px 12px; font-size:12px; width:auto; margin-bottom:4px;" onclick='editAnnouncement(${JSON.stringify(a).replace(/'/g, "&#39;")})'>Edit</button>
+                    <button class="btn-primary" style="padding:6px 12px; font-size:12px; width:auto; background:var(--bg-panel); border:1px solid var(--accent);" onclick="sendAnnouncementPush(${a.id})">🔔 Push</button>
+                </td>
+            </tr>
+            `;
+        }).join('');
+    } catch(e) { console.error('Announcements error:', e); }
+}
+
+function editAnnouncement(ann) {
+    document.getElementById('ann-id').value = ann.id;
+    document.getElementById('ann-title').value = ann.title;
+    document.getElementById('ann-task').value = ann.task_description;
+    document.getElementById('ann-reward-type').value = ann.reward_type;
+    document.getElementById('ann-reward-amount').value = ann.reward_amount;
+    
+    // Convert dates to datetime-local format
+    const toLocalISO = (dStr) => {
+        const d = new Date(dStr);
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().slice(0,16);
+    };
+    
+    document.getElementById('ann-start').value = toLocalISO(ann.start_date);
+    document.getElementById('ann-end').value = toLocalISO(ann.end_date);
+    document.getElementById('ann-notification').value = ann.notification_message || '';
+    
+    document.getElementById('announcement-modal-title').textContent = 'Edit Bonus Challenge';
+    document.getElementById('btn-save-announcement').textContent = 'Update Challenge';
+    document.getElementById('announcement-modal').style.display = 'flex';
+}
+
+async function handleAnnouncementSubmit(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-announcement');
+    const id = document.getElementById('ann-id').value;
+    
+    const toMySQLDate = (isoStr) => new Date(isoStr).toISOString().slice(0, 19).replace('T', ' ');
+
+    const payload = {
+        title: document.getElementById('ann-title').value,
+        task_description: document.getElementById('ann-task').value,
+        reward_type: document.getElementById('ann-reward-type').value,
+        reward_amount: parseInt(document.getElementById('ann-reward-amount').value),
+        start_date: toMySQLDate(document.getElementById('ann-start').value),
+        end_date: toMySQLDate(document.getElementById('ann-end').value),
+        notification_message: document.getElementById('ann-notification').value,
+        difficulty_target: 'Any',
+        theme_target: 'Any'
+    };
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        const url = id ? `/admin/reward-announcements/${id}` : '/admin/reward-announcements';
+        const method = id ? 'PUT' : 'POST';
+        
+        const res = await apiFetch(url, {
+            method,
+            body: JSON.stringify(payload)
+        });
+        
+        if (res.success) {
+            alert(id ? "Updated successfully!" : `Created successfully! Push notifications sent to ${res.notified_count} users.`);
+            document.getElementById('announcement-modal').style.display = 'none';
+            document.getElementById('announcement-form').reset();
+            document.getElementById('ann-id').value = '';
+            document.getElementById('announcement-modal-title').textContent = 'Create Bonus Challenge';
+            document.getElementById('btn-save-announcement').textContent = 'Publish Challenge';
+            loadAnnouncements();
+        } else {
+            alert(res.detail || "Failed to save announcement");
+        }
+    } catch(err) {
+        alert(err.message || "An error occurred");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = id ? 'Update Challenge' : 'Publish Challenge';
+    }
+}
+
+async function toggleAnnouncementStatus(id, status) {
+    try {
+        const res = await apiFetch(`/admin/reward-announcements/${id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status })
+        });
+        if (!res.success) alert("Failed to update status");
+        loadAnnouncements();
+    } catch(e) {
+        alert("Error updating status");
+        loadAnnouncements();
+    }
+}
+
+async function sendAnnouncementPush(id) {
+    if (!confirm("Send push notification to all players for this announcement?")) return;
+    try {
+        const res = await apiFetch(`/admin/reward-announcements/${id}/notify`, { method: 'POST' });
+        if (res.success) alert(`Push notification sent to ${res.notified_count} users!`);
+    } catch(e) { alert("Error sending push notification"); }
 }
 
 // -----------------------------------------------------------------

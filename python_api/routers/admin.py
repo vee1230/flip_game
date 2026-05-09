@@ -4,6 +4,8 @@ from pydantic import BaseModel
 import jwt
 import datetime
 import os
+import firebase_admin
+from firebase_admin import messaging
 
 from database import get_db
 
@@ -22,6 +24,31 @@ class RewardAdjustRequest(BaseModel):
     action: str  # add or deduct
     amount: int
     reason: str
+
+class AnnouncementCreateRequest(BaseModel):
+    title: str
+    task_description: str
+    reward_type: str  # stars or trophies
+    reward_amount: int
+    difficulty_target: str = "Any"
+    theme_target: str = "Any"
+    start_date: str
+    end_date: str
+    notification_message: str
+
+class AnnouncementUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    task_description: Optional[str] = None
+    reward_type: Optional[str] = None
+    reward_amount: Optional[int] = None
+    difficulty_target: Optional[str] = None
+    theme_target: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    notification_message: Optional[str] = None
+
+class AnnouncementStatusRequest(BaseModel):
+    status: str  # active or inactive
 
 # ---------------------------------------------------------
 # AUTHENTICATION & DEPENDENCY
@@ -213,6 +240,149 @@ def get_reward_logs(admin_id: int = Depends(get_current_admin)):
                 LIMIT 100
             """)
             return cursor.fetchall()
+    finally:
+        db.close()
+
+# ---------------------------------------------------------
+# REWARD ANNOUNCEMENTS
+# ---------------------------------------------------------
+@router.post("/reward-announcements")
+def create_announcement(req: AnnouncementCreateRequest, admin_id: int = Depends(get_current_admin)):
+    if req.reward_amount <= 0:
+        raise HTTPException(status_code=400, detail="Reward amount must be greater than 0")
+    if req.reward_type not in ['stars', 'trophies']:
+        raise HTTPException(status_code=400, detail="Reward type must be stars or trophies")
+
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO reward_announcements 
+                (title, task_description, reward_type, reward_amount, difficulty_target, theme_target, 
+                 start_date, end_date, notification_message, created_by_admin)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (req.title, req.task_description, req.reward_type, req.reward_amount, req.difficulty_target, 
+                  req.theme_target, req.start_date, req.end_date, req.notification_message, admin_id))
+            
+            announcement_id = cursor.lastrowid
+            
+            # Send push notifications
+            cursor.execute("SELECT fcm_token FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
+            tokens = [row['fcm_token'] for row in cursor.fetchall()]
+            
+            notified_count = 0
+            if tokens:
+                try:
+                    title_prefix = "⭐" if req.reward_type == 'stars' else "🏆"
+                    message = messaging.MulticastMessage(
+                        notification=messaging.Notification(
+                            title=f"{title_prefix} {req.title}",
+                            body=req.notification_message or f"New bonus challenge available! Earn {req.reward_amount} {req.reward_type}."
+                        ),
+                        tokens=tokens,
+                    )
+                    response = messaging.send_multicast(message)
+                    notified_count = response.success_count
+                except Exception as e:
+                    print(f"Failed to send push notifications: {e}")
+                    
+            db.commit()
+            return {"success": True, "id": announcement_id, "notified_count": notified_count}
+    finally:
+        db.close()
+
+@router.get("/reward-announcements")
+def get_announcements(admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                SELECT a.*, ad.display_name as admin_name,
+                (SELECT COUNT(*) FROM reward_announcement_claims WHERE announcement_id = a.id AND is_claimed = 1) as total_claims
+                FROM reward_announcements a
+                LEFT JOIN admins ad ON a.created_by_admin = ad.id
+                ORDER BY a.created_at DESC
+            """)
+            return cursor.fetchall()
+    finally:
+        db.close()
+
+@router.put("/reward-announcements/{announcement_id}")
+def update_announcement(announcement_id: int, req: AnnouncementUpdateRequest, admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            # Build dynamic update query
+            updates = []
+            params = []
+            
+            for field, value in req.model_dump(exclude_unset=True).items():
+                if field == 'reward_amount' and value <= 0:
+                    raise HTTPException(status_code=400, detail="Reward amount must be greater than 0")
+                if field == 'reward_type' and value not in ['stars', 'trophies']:
+                    raise HTTPException(status_code=400, detail="Reward type must be stars or trophies")
+                    
+                updates.append(f"{field} = %s")
+                params.append(value)
+                
+            if not updates:
+                return {"success": True, "message": "Nothing to update"}
+                
+            query = f"UPDATE reward_announcements SET {', '.join(updates)} WHERE id = %s"
+            params.append(announcement_id)
+            
+            cursor.execute(query, tuple(params))
+            db.commit()
+            
+            return {"success": True}
+    finally:
+        db.close()
+
+@router.patch("/reward-announcements/{announcement_id}/status")
+def toggle_announcement_status(announcement_id: int, req: AnnouncementStatusRequest, admin_id: int = Depends(get_current_admin)):
+    if req.status not in ['active', 'inactive']:
+        raise HTTPException(status_code=400, detail="Invalid status")
+        
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("UPDATE reward_announcements SET status = %s WHERE id = %s", (req.status, announcement_id))
+            db.commit()
+            return {"success": True}
+    finally:
+        db.close()
+
+@router.post("/reward-announcements/{announcement_id}/notify")
+def notify_announcement(announcement_id: int, admin_id: int = Depends(get_current_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("SELECT * FROM reward_announcements WHERE id = %s", (announcement_id,))
+            ann = cursor.fetchone()
+            if not ann:
+                raise HTTPException(status_code=404, detail="Announcement not found")
+                
+            cursor.execute("SELECT fcm_token FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
+            tokens = [row['fcm_token'] for row in cursor.fetchall()]
+            
+            notified_count = 0
+            if tokens:
+                try:
+                    title_prefix = "⭐" if ann['reward_type'] == 'stars' else "🏆"
+                    message = messaging.MulticastMessage(
+                        notification=messaging.Notification(
+                            title=f"{title_prefix} {ann['title']}",
+                            body=ann['notification_message'] or f"New bonus challenge available! Earn {ann['reward_amount']} {ann['reward_type']}."
+                        ),
+                        tokens=tokens,
+                    )
+                    response = messaging.send_multicast(message)
+                    notified_count = response.success_count
+                except Exception as e:
+                    print(f"Failed to send push notifications: {e}")
+                    raise HTTPException(status_code=500, detail=str(e))
+                    
+            return {"success": True, "notified_count": notified_count}
     finally:
         db.close()
 
