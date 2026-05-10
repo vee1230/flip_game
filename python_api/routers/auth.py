@@ -326,8 +326,8 @@ def google_callback(code: Optional[str] = None, error: Optional[str] = None):
                 username = email.split("@")[0] if "@" in email else email
                 cursor.execute(
                     """INSERT INTO players 
-                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies, stars) 
-                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0, 0)""",
+                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies, stars, email_verified) 
+                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0, 0, 1)""",
                     (name, username, email, google_id, avatar)
                 )
                 db.commit()
@@ -388,8 +388,8 @@ def firebase_sync(req: FirebaseSyncRequest):
                 username = req.email.split("@")[0] if "@" in req.email else req.uid[:10]
                 cursor.execute(
                     """INSERT INTO players 
-                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies, stars) 
-                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0, 0)""",
+                       (display_name, username, email, account_type, status, google_uid, profile_picture, trophies, stars, email_verified) 
+                       VALUES (%s, %s, %s, 'Google', 'Active', %s, %s, 0, 0, 1)""",
                     (req.name, username, req.email, req.uid, req.avatar)
                 )
                 db.commit()

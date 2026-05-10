@@ -9,8 +9,10 @@ Docs at  http://localhost:8000/docs
 import os
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import traceback
 
 from routers import auth, admin, notifications, scores, ml, users, multiplayer, rewards, cron, daily_challenge
 from models.models import load_models
@@ -76,3 +78,27 @@ app.include_router(daily_challenge.router, prefix="/api/v1/daily-challenge", tag
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "Memory Match Puzzle API is running!", "version": "1.0.0"}
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"Unhandled Exception on {request.method} {request.url}: {exc}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False, 
+            "message": "Internal Server Error", 
+            "detail": "An unexpected error occurred."
+        }
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False, 
+            "message": str(exc.detail), 
+            "detail": str(exc.detail)
+        }
+    )

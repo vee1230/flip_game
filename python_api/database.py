@@ -56,6 +56,72 @@ def init_db():
                             except Exception:
                                 pass  # Ignore if table/index already exists
 
+            # 1.1 players table fallback
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS `players` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `google_uid` varchar(255) DEFAULT NULL,
+              `display_name` varchar(255) NOT NULL,
+              `email` varchar(255) DEFAULT NULL,
+              `account_type` varchar(50) DEFAULT 'Guest',
+              `status` varchar(50) DEFAULT 'Active',
+              `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+              `trophies` int(11) NOT NULL DEFAULT 0,
+              `stars` int(11) NOT NULL DEFAULT 0,
+              PRIMARY KEY (`id`),
+              UNIQUE KEY `google_uid` (`google_uid`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 1.2 scores table fallback
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS `scores` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `player_id` int(11) NOT NULL,
+              `score` int(11) NOT NULL,
+              `stage` varchar(50) NOT NULL,
+              `theme` varchar(50) NOT NULL,
+              `time_seconds` int(11) NOT NULL,
+              `moves` int(11) DEFAULT NULL,
+              `achieved_at` timestamp NOT NULL DEFAULT current_timestamp(),
+              PRIMARY KEY (`id`),
+              FOREIGN KEY (`player_id`) REFERENCES `players`(`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 1.3 activities table fallback
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS `activities` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `player_id` int(11) DEFAULT NULL,
+              `action_type` varchar(50) NOT NULL,
+              `details` text DEFAULT NULL,
+              `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+              PRIMARY KEY (`id`),
+              FOREIGN KEY (`player_id`) REFERENCES `players`(`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 1.4 daily_challenges table fallback
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS `daily_challenges` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `player_id` int(11) NOT NULL,
+              `date` date NOT NULL,
+              `is_completed` tinyint(1) NOT NULL DEFAULT 0,
+              `is_claimed` tinyint(1) NOT NULL DEFAULT 0,
+              `matched_pairs` int(11) DEFAULT 0,
+              `completed_at` timestamp NULL DEFAULT NULL,
+              `claimed_at` timestamp NULL DEFAULT NULL,
+              `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+              PRIMARY KEY (`id`),
+              UNIQUE KEY `player_date_unique` (`player_id`, `date`),
+              FOREIGN KEY (`player_id`) REFERENCES `players`(`id`) ON DELETE CASCADE,
+              INDEX idx_player_date (player_id, date),
+              INDEX idx_date (date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
             # 2. rewards table
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS `rewards` (

@@ -14,6 +14,8 @@ def init_firebase():
             try:
                 # Parse the JSON string from the environment variable
                 cert_dict = json.loads(env_json)
+                if "private_key" in cert_dict:
+                    cert_dict["private_key"] = cert_dict["private_key"].replace("\\n", "\n")
                 cred = credentials.Certificate(cert_dict)
             except Exception as e:
                 print(f"Error parsing FIREBASE_SERVICE_ACCOUNT_JSON from env: {e}")
