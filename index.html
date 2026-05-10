@@ -1622,26 +1622,32 @@
       if (!currentUser || currentUser.type === 'guest') return;
       const container = document.getElementById('active-announcements-container');
       if (!container) return;
-      
+
       try {
         const res = await fetch(`${PYTHON_API}/rewards/announcements/active/${currentUser.id}`);
+        if (!res.ok) { container.innerHTML = ''; return; }
         const announcements = await res.json();
-        
-        if (announcements && announcements.length > 0) {
-          container.innerHTML = announcements.map(ann => {
+
+        // Filter out already-claimed cards — they should not appear at all
+        const unclaimed = (announcements || []).filter(ann => !ann.is_claimed);
+
+        if (unclaimed.length > 0) {
+          container.innerHTML = unclaimed.map(ann => {
             const icon = ann.reward_type === 'stars' ? '⭐' : '🏆';
-            const claimedHTML = ann.is_claimed 
-              ? `<span class="event-badge" style="background:var(--bg-card);color:var(--text-secondary);">Claimed</span>`
-              : `<button class="event-badge" style="border:none; cursor:pointer;" onclick="claimAnnouncement(event, ${ann.id})">Claim ${ann.reward_amount}${icon}</button>`;
-              
             return `
-              <div class="home-event-banner" style="margin-bottom:12px; cursor:default;" data-id="${ann.id}">
+              <div class="home-event-banner" style="margin-bottom:12px; cursor:default;"
+                   data-announcement-id="${ann.id}">
                 <span class="event-icon">${icon}</span>
                 <div class="event-info">
                   <div class="event-title">${ann.title}</div>
                   <div class="event-desc">${ann.task_description}</div>
                 </div>
-                ${claimedHTML}
+                <button class="event-badge"
+                        style="border:none; cursor:pointer;"
+                        onclick="claimAnnouncement(event, ${ann.id})"
+                        data-original-text="Claim ${ann.reward_amount}${icon}">
+                  Claim ${ann.reward_amount}${icon}
+                </button>
               </div>
             `;
           }).join('');
@@ -1656,47 +1662,61 @@
     async function claimAnnouncement(e, id) {
       e.stopPropagation();
       if (!currentUser || currentUser.type === 'guest') return;
-      
-      const btn = e.target;
+
+      const btn = e.currentTarget;
+      const originalText = btn.dataset.originalText || btn.textContent || 'Claim';
       btn.disabled = true;
       btn.textContent = 'Claiming...';
-      
+
       try {
         const res = await fetch(`${PYTHON_API}/rewards/announcements/${id}/claim`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ player_id: currentUser.id })
+          body: JSON.stringify({
+            player_id: currentUser.id,
+            completed: true   // ← Required: tells backend task is confirmed done
+          })
         });
-        
+
         const data = await res.json();
-        
-        if (res.ok && data.success) {
-          showToast(data.message, 'success');
-          
-          // Update local state
-          if (data.reward_type === 'stars') {
-             currentUser.stars = data.new_balance;
-             updateStarsDisplay();
-          } else if (data.reward_type === 'trophies') {
-             currentUser.trophies = data.new_balance;
-             const tr = document.getElementById('home-trophies-value');
-             if(tr) tr.textContent = data.new_balance;
-          }
-          
-          localStorage.setItem(SESS_KEY, JSON.stringify(currentUser));
-          
-          // Refresh list to show Claimed button
-          fetchActiveAnnouncements();
-        } else {
-          showToast(data.detail || 'Failed to claim reward', 'error');
-          btn.disabled = false;
-          btn.textContent = 'Claim';
+
+        if (!res.ok || data.success === false) {
+          throw new Error(data.detail || data.message || 'Failed to claim reward');
         }
+
+        // ── Update local stars / trophies immediately ──────────────────────
+        if (data.total_stars !== undefined) {
+          currentUser.stars = data.total_stars;
+          const starsEl = document.getElementById('home-coins-value');
+          if (starsEl) starsEl.textContent = `${data.total_stars} Stars`;
+        }
+        if (data.total_trophies !== undefined) {
+          currentUser.trophies = data.total_trophies;
+          const trEl = document.getElementById('home-trophies-value');
+          if (trEl) trEl.textContent = data.total_trophies;
+        }
+        localStorage.setItem(SESS_KEY, JSON.stringify(currentUser));
+
+        // ── Remove the claimed card from DOM immediately ───────────────────
+        const card = document.querySelector(`[data-announcement-id="${id}"]`);
+        if (card) card.remove();
+
+        // ── Hide section if no cards remain ───────────────────────────────
+        const container = document.getElementById('active-announcements-container');
+        if (container && container.querySelectorAll('.home-event-banner').length === 0) {
+          container.innerHTML = '';
+        }
+
+        showToast(data.message || 'Reward claimed successfully!', 'success');
+
+        // Reload from backend to stay in sync
+        await fetchActiveAnnouncements();
+
       } catch (err) {
-        console.error(err);
-        showToast('Network error while claiming', 'error');
+        console.error('[claimAnnouncement] Error:', err);
         btn.disabled = false;
-        btn.textContent = 'Claim';
+        btn.textContent = originalText;
+        showToast(err.message || 'Failed to claim reward.', 'error');
       }
     }
 
