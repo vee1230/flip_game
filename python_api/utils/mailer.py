@@ -52,20 +52,29 @@ def _send_via_brevo(to_email: str, to_name: str, subject: str, html_content: str
 
 
 def _send_via_smtp(to_email: str, to_name: str, subject: str, html_content: str) -> bool:
+    import datetime
+    import uuid
     print(f"[Mailer] Using SMTP for: {to_email}")
     if not SMTP_USER or not SMTP_PASSWORD:
         print("[Mailer] Email failed: missing SMTP_USER or SMTP_PASSWORD in environment variables")
         return False
         
     try:
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative')
         msg['From'] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
         msg['To'] = f"{to_name} <{to_email}>"
         msg['Subject'] = subject
-        msg.attach(MIMEText(html_content, 'html'))
+        msg['Message-ID'] = f"<{uuid.uuid4()}@memorymatchpuzzle.app>"
+        msg['Date'] = datetime.datetime.now(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+        msg['X-Mailer'] = 'Memory Match Puzzle Mailer'
+        msg['Precedence'] = 'bulk'
+        msg['List-Unsubscribe'] = '<https://flip-game-live.vercel.app/>'
+        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
         
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.send_message(msg)
             
@@ -80,7 +89,7 @@ def _send_via_smtp(to_email: str, to_name: str, subject: str, html_content: str)
 
 
 def send_welcome_email(to_email: str, to_name: str) -> bool:
-    subject = "🎮 Welcome to Memory Match Puzzle!"
+    subject = "Welcome to Memory Match Puzzle! Your account is ready"
     html = f"""
     <html>
     <body style="margin:0; padding:0; background-color:#0a0a1a; font-family:'Segoe UI',Arial,sans-serif;">
@@ -98,9 +107,6 @@ def send_welcome_email(to_email: str, to_name: str) -> bool:
           <h2 style="margin:0 0 8px; color:#e0e0ff; font-size:22px;">Welcome aboard, {to_name}! 🎉</h2>
           <p style="margin:0 0 20px; color:rgba(255,255,255,0.65); font-size:15px; line-height:1.6;">
             Your account has been created successfully. You're now part of a growing community of memory champions!
-          </p>
-          <p style="margin:0 0 20px; color:rgba(255,255,255,0.5); font-size:13px; font-style:italic; line-height:1.5;">
-            💡 Check mo spam mo or derekta ka nang pumunta sa laro hehe :)
           </p>
 
           <!-- Play Now Button -->
