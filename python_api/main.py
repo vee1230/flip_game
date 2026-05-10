@@ -12,6 +12,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import traceback
 
 from routers import auth, admin, notifications, scores, ml, users, multiplayer, rewards, cron, daily_challenge
@@ -19,14 +20,8 @@ from models.models import load_models
 from database import init_db
 from firebase_config import init_firebase
 
-app = FastAPI(
-    title="Memory Match Puzzle API",
-    description="Core Python service powering both the Web and Mobile interfaces.",
-    version="1.0.0"
-)
-
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Load all ML models into memory and initialize database schemas when the server starts."""
     try:
         init_db()
@@ -40,6 +35,14 @@ def startup_event():
         load_models()
     except Exception as e:
         print(f"Warning: ML model loading failed (non-fatal): {e}")
+    yield
+
+app = FastAPI(
+    title="Memory Match Puzzle API",
+    description="Core Python service powering both the Web and Mobile interfaces.",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 # Allow frontend origins (Vercel + local dev)
 ALLOWED_ORIGINS = [
