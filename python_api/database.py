@@ -27,11 +27,16 @@ def get_db():
     return pymysql.connect(**DB_CONFIG)
 
 def _safe_alter(cursor, sql):
-    """Run an ALTER TABLE statement; silently ignore duplicate-column errors (1060)."""
+    """Run an ALTER TABLE / ADD INDEX statement; silently ignore duplicate-column (1060)
+    and duplicate-key (1061) errors so migrations are idempotent."""
     try:
         cursor.execute(sql)
     except pymysql.err.OperationalError as e:
-        if e.args[0] != 1060:
+        if e.args[0] in (1060, 1061):
+            # 1060 = Duplicate column name, 1061 = Duplicate key name — already applied
+            pass
+        else:
+            print(f"[DB Migration Warning] {e.args[0]}: {e.args[1]} | SQL: {sql[:120]}")
             raise
 
 def init_db():
@@ -159,15 +164,69 @@ def init_db():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
-            # 8. Ensure players columns exist
+            # 8. Ensure players columns exist (Phase 1 / 2 / 3)
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN username varchar(255) DEFAULT NULL")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN password_hash varchar(255) DEFAULT NULL")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN profile_picture varchar(255) DEFAULT NULL")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN fcm_token varchar(500) DEFAULT NULL")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN stars INT(11) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE players ADD COLUMN trophies INT(11) NOT NULL DEFAULT 0")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN last_login TIMESTAMP NULL DEFAULT NULL")
 
-            # 9. Auto-seed admin account from env vars (only if not exists)
+            # 9. Ensure rewards columns exist
+            _safe_alter(cursor, "ALTER TABLE rewards ADD COLUMN reward_type varchar(50) NOT NULL DEFAULT 'trophies'")
+            _safe_alter(cursor, "ALTER TABLE rewards ADD COLUMN reward_amount int(11) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE rewards ADD COLUMN reward_status varchar(50) DEFAULT 'pending'")
+            _safe_alter(cursor, "ALTER TABLE rewards ADD COLUMN source varchar(100) DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE rewards ADD COLUMN claimed_at timestamp NULL DEFAULT NULL")
+
+            # 10. Ensure reward_announcements columns exist
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN title varchar(255) NOT NULL DEFAULT ''")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN task_description text NOT NULL")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN reward_type enum('stars','trophies') NOT NULL DEFAULT 'stars'")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN reward_amount int(11) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN difficulty_target varchar(50) DEFAULT 'Any'")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN theme_target varchar(50) DEFAULT 'Any'")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN start_date datetime NOT NULL DEFAULT '2000-01-01 00:00:00'")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN end_date datetime NOT NULL DEFAULT '2099-12-31 23:59:59'")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN notification_message text DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN status enum('active','inactive') DEFAULT 'active'")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN created_by_admin int(11) DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN created_at timestamp NOT NULL DEFAULT current_timestamp()")
+            _safe_alter(cursor, "ALTER TABLE reward_announcements ADD COLUMN updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()")
+
+            # 11. Ensure reward_announcement_claims columns exist
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD COLUMN announcement_id int(11) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD COLUMN player_id int(11) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD COLUMN is_completed tinyint(1) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD COLUMN is_claimed tinyint(1) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD COLUMN claimed_at timestamp NULL DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD COLUMN created_at timestamp NOT NULL DEFAULT current_timestamp()")
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD COLUMN updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()")
+            _safe_alter(cursor, "ALTER TABLE reward_announcement_claims ADD UNIQUE KEY unique_claim (announcement_id, player_id)")
+
+            # 12. Ensure multiplayer_matches columns exist
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN room_id varchar(100) NOT NULL DEFAULT ''")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN player_1_id int(11) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN player_2_id int(11) NOT NULL DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN player_1_score int(11) DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN player_2_score int(11) DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN winner_id int(11) DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN status enum('waiting','active','completed','disconnected') DEFAULT 'waiting'")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN started_at timestamp NULL DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN ended_at timestamp NULL DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN duration_seconds int(11) DEFAULT 0")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN disconnected_player_id int(11) DEFAULT NULL")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN created_at timestamp NOT NULL DEFAULT current_timestamp()")
+            _safe_alter(cursor, "ALTER TABLE multiplayer_matches ADD COLUMN updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()")
+
+            # 13. Ensure activities.player_id is nullable (for system activities)
+            try:
+                cursor.execute("ALTER TABLE activities MODIFY COLUMN player_id int(11) DEFAULT NULL")
+            except Exception as e:
+                print(f"[DB Migration] activities.player_id modify: {e}")
+
+            # 14. Auto-seed admin account from env vars (only if not exists)
             admin_username = os.getenv("ADMIN_USERNAME", "yvezjayveegesmundo")
             admin_password = os.getenv("ADMIN_PASSWORD", "thethethe")
             admin_email    = os.getenv("ADMIN_EMAIL", admin_username)

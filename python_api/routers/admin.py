@@ -248,23 +248,32 @@ def get_reward_logs(admin_id: int = Depends(get_current_admin)):
 # ---------------------------------------------------------
 
 def send_announcement_push(cursor, announcement_id, title, notification_message, reward_type, reward_amount):
-    cursor.execute("SELECT id, fcm_token FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
-    players = cursor.fetchall()
-    tokens = [p['fcm_token'] for p in players]
-    
+    """Send FCM push notifications for a new announcement. Never raises — failures are logged only."""
     success_count = 0
     failure_count = 0
-    
+
     print(f"\n--- Sending Push Notification for Announcement {announcement_id} ---")
     print(f"Title: {title}")
     print(f"Reward: {reward_amount} {reward_type}")
-    print(f"Found {len(tokens)} valid FCM tokens.")
-    
-    if not tokens:
-        print("No FCM tokens found. Skipping push.")
+
+    # Guard: Firebase must be initialized before attempting to send
+    if not firebase_admin._apps:
+        print("Firebase Admin is not initialized. Skipping push notifications.")
+        print("-----------------------------------------------------------\n")
         return 0, 0
-        
+
     try:
+        cursor.execute("SELECT id, fcm_token FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
+        players = cursor.fetchall()
+        tokens = [p['fcm_token'] for p in players]
+
+        print(f"Found {len(tokens)} valid FCM tokens.")
+
+        if not tokens:
+            print("No FCM tokens found. Skipping push.")
+            print("-----------------------------------------------------------\n")
+            return 0, 0
+
         title_prefix = "⭐" if reward_type == 'stars' else "🏆"
         message = messaging.MulticastMessage(
             notification=messaging.Notification(
@@ -276,34 +285,58 @@ def send_announcement_push(cursor, announcement_id, title, notification_message,
         response = messaging.send_multicast(message)
         success_count = response.success_count
         failure_count = response.failure_count
-        
+
         print(f"Push Sent! Success: {success_count}, Failure: {failure_count}")
-        
+
         if failure_count > 0:
             invalid_tokens = []
             for idx, resp in enumerate(response.responses):
                 if not resp.success:
-                    print(f"Failed token at index {idx}: {resp.exception}")
-                    if resp.exception and getattr(resp.exception, 'code', None) in ['messaging/invalid-registration-token', 'messaging/registration-token-not-registered']:
+                    print(f"  Failed token[{idx}]: {resp.exception}")
+                    if resp.exception and getattr(resp.exception, 'code', None) in [
+                        'messaging/invalid-registration-token',
+                        'messaging/registration-token-not-registered'
+                    ]:
                         invalid_tokens.append(tokens[idx])
-            
+
             if invalid_tokens:
                 print(f"Removing {len(invalid_tokens)} invalid tokens from database.")
                 format_strings = ','.join(['%s'] * len(invalid_tokens))
-                cursor.execute(f"UPDATE players SET fcm_token = NULL WHERE fcm_token IN ({format_strings})", tuple(invalid_tokens))
-                
+                cursor.execute(
+                    f"UPDATE players SET fcm_token = NULL WHERE fcm_token IN ({format_strings})",
+                    tuple(invalid_tokens)
+                )
+
     except Exception as e:
-        print(f"Firebase Admin Error: {str(e)}")
-        
+        print(f"Firebase push error (non-fatal): {str(e)}")
+
     print("-----------------------------------------------------------\n")
     return success_count, failure_count
 
 @router.post("/reward-announcements")
 def create_announcement(req: AnnouncementCreateRequest, admin_id: int = Depends(get_current_admin)):
+    # Validate reward_type
+    if req.reward_type not in ['stars', 'trophies']:
+        raise HTTPException(status_code=400, detail="Reward type must be 'stars' or 'trophies'")
+    # Validate reward_amount
     if req.reward_amount <= 0:
         raise HTTPException(status_code=400, detail="Reward amount must be greater than 0")
-    if req.reward_type not in ['stars', 'trophies']:
-        raise HTTPException(status_code=400, detail="Reward type must be stars or trophies")
+    if req.reward_amount > 10000:
+        raise HTTPException(status_code=400, detail="Reward amount must not exceed 10000")
+    # Validate title and task_description
+    if not req.title or not req.title.strip():
+        raise HTTPException(status_code=400, detail="Title must not be empty")
+    if not req.task_description or not req.task_description.strip():
+        raise HTTPException(status_code=400, detail="Task description must not be empty")
+    # Validate date range
+    try:
+        import datetime as dt
+        start = dt.datetime.fromisoformat(req.start_date.replace("Z", "+00:00"))
+        end = dt.datetime.fromisoformat(req.end_date.replace("Z", "+00:00"))
+        if end <= start:
+            raise HTTPException(status_code=400, detail="end_date must be after start_date")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format for start_date or end_date")
 
     db = get_db()
     try:
@@ -313,20 +346,25 @@ def create_announcement(req: AnnouncementCreateRequest, admin_id: int = Depends(
                 (title, task_description, reward_type, reward_amount, difficulty_target, theme_target, 
                  start_date, end_date, notification_message, created_by_admin)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (req.title, req.task_description, req.reward_type, req.reward_amount, req.difficulty_target, 
-                  req.theme_target, req.start_date, req.end_date, req.notification_message, admin_id))
-            
+            """, (req.title.strip(), req.task_description.strip(), req.reward_type, req.reward_amount,
+                  req.difficulty_target, req.theme_target, req.start_date, req.end_date,
+                  req.notification_message, admin_id))
+
             announcement_id = cursor.lastrowid
-            
-            # Send push notifications
+
+            # Commit the announcement first so it's saved even if push fails
+            db.commit()
+
+            # Send push notifications (non-breaking — errors are logged, not raised)
             success_count, failure_count = send_announcement_push(
                 cursor, announcement_id, req.title, req.notification_message, req.reward_type, req.reward_amount
             )
-                    
+            # Commit any token cleanup done during push
             db.commit()
+
             return {
-                "success": True, 
-                "id": announcement_id, 
+                "success": True,
+                "id": announcement_id,
                 "notification_success_count": success_count,
                 "notification_failure_count": failure_count
             }
@@ -418,8 +456,33 @@ def notify_announcement(announcement_id: int, admin_id: int = Depends(get_curren
         db.close()
 
 # ---------------------------------------------------------
-# EXISTING ENDPOINTS MOVED BEHIND JWT AUTH
+# LEADERBOARD
 # ---------------------------------------------------------
+@router.get("/leaderboard")
+def get_leaderboard(admin_id: int = Depends(get_current_admin)):
+    """Return the top 50 scores with player info for the admin leaderboard tab."""
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            try:
+                cursor.execute("""
+                    SELECT s.id, s.score, s.stage, s.theme, s.time_seconds, s.achieved_at,
+                           p.id as player_id, p.display_name, p.username, p.email,
+                           p.account_type, p.stars, p.trophies
+                    FROM scores s
+                    JOIN players p ON s.player_id = p.id
+                    ORDER BY s.score DESC
+                    LIMIT 50
+                """)
+                leaderboard = cursor.fetchall()
+            except Exception as e:
+                print(f"[Admin] Leaderboard query error: {e}")
+                leaderboard = []
+
+            return {"leaderboard": leaderboard}
+    finally:
+        db.close()
+
 # ---------------------------------------------------------
 # PHASE 3: ANALYTICS & MONITORING ENDPOINTS
 # ---------------------------------------------------------
@@ -428,50 +491,76 @@ def get_analytics_overview(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            stats = {}
-            cursor.execute("SELECT COUNT(*) as c FROM players")
-            stats['total_players'] = cursor.fetchone()['c']
-            
-            cursor.execute("SELECT COUNT(*) as c FROM players WHERE last_login >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
-            stats['active_players'] = cursor.fetchone()['c']
-            
-            cursor.execute("SELECT COUNT(*) as c FROM scores")
-            stats['total_games'] = cursor.fetchone()['c']
-            
-            cursor.execute("SELECT MAX(score) as m FROM scores")
-            stats['highest_score'] = cursor.fetchone()['m'] or 0
-            
-            cursor.execute("SELECT SUM(stars) as s, SUM(trophies) as t FROM players")
-            row = cursor.fetchone()
-            stats['total_stars'] = row['s'] or 0
-            stats['total_trophies'] = row['t'] or 0
-            
-            cursor.execute("SELECT COUNT(*) as c FROM daily_challenges WHERE is_completed = 1")
-            stats['total_daily_challenges'] = cursor.fetchone()['c']
-            
-            cursor.execute("SELECT COUNT(*) as c FROM rewards WHERE reward_status = 'claimed'")
-            stats['total_reward_chests'] = cursor.fetchone()['c']
-            
-            cursor.execute("SELECT COUNT(*) as c FROM reward_announcement_claims WHERE is_claimed = 1")
-            stats['total_bonus_claims'] = cursor.fetchone()['c']
-            
+            stats = {
+                'total_players': 0, 'active_players': 0, 'total_games': 0,
+                'highest_score': 0, 'total_stars': 0, 'total_trophies': 0,
+                'total_daily_challenges': 0, 'total_reward_chests': 0,
+                'total_bonus_claims': 0, 'total_multiplayer_matches': 0,
+                'active_multiplayer_matches': 0, 'tokens_active': 0, 'tokens_inactive': 0,
+            }
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM players")
+                stats['total_players'] = cursor.fetchone()['c']
+            except Exception as e:
+                print(f"[Analytics] players count error: {e}")
+
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM players WHERE last_login >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
+                stats['active_players'] = cursor.fetchone()['c']
+            except Exception as e:
+                print(f"[Analytics] active_players error: {e}")
+
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM scores")
+                stats['total_games'] = cursor.fetchone()['c']
+                cursor.execute("SELECT MAX(score) as m FROM scores")
+                row = cursor.fetchone()
+                stats['highest_score'] = row['m'] or 0 if row else 0
+            except Exception as e:
+                print(f"[Analytics] scores error: {e}")
+
+            try:
+                cursor.execute("SELECT SUM(stars) as s, SUM(trophies) as t FROM players")
+                row = cursor.fetchone()
+                stats['total_stars'] = int(row['s'] or 0) if row else 0
+                stats['total_trophies'] = int(row['t'] or 0) if row else 0
+            except Exception as e:
+                print(f"[Analytics] stars/trophies error: {e}")
+
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM daily_challenges WHERE is_completed = 1")
+                stats['total_daily_challenges'] = cursor.fetchone()['c']
+            except Exception as e:
+                print(f"[Analytics] daily_challenges error: {e}")
+
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM rewards WHERE reward_status = 'claimed'")
+                stats['total_reward_chests'] = cursor.fetchone()['c']
+            except Exception as e:
+                print(f"[Analytics] rewards error: {e}")
+
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM reward_announcement_claims WHERE is_claimed = 1")
+                stats['total_bonus_claims'] = cursor.fetchone()['c']
+            except Exception as e:
+                print(f"[Analytics] bonus_claims error: {e}")
+
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM multiplayer_matches")
                 stats['total_multiplayer_matches'] = cursor.fetchone()['c']
-                
                 cursor.execute("SELECT COUNT(*) as c FROM multiplayer_matches WHERE status = 'active'")
                 stats['active_multiplayer_matches'] = cursor.fetchone()['c']
-            except Exception:
-                stats['total_multiplayer_matches'] = 0
-                stats['active_multiplayer_matches'] = 0
-            
-            # Push monitoring stats
-            cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
-            stats['tokens_active'] = cursor.fetchone()['c']
-            
-            cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NULL OR fcm_token = ''")
-            stats['tokens_inactive'] = cursor.fetchone()['c']
-            
+            except Exception as e:
+                print(f"[Analytics] multiplayer error: {e}")
+
+            try:
+                cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
+                stats['tokens_active'] = cursor.fetchone()['c']
+                cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NULL OR fcm_token = ''")
+                stats['tokens_inactive'] = cursor.fetchone()['c']
+            except Exception as e:
+                print(f"[Analytics] fcm_token error: {e}")
+
             return stats
     finally:
         db.close()
@@ -481,14 +570,18 @@ def get_players_per_day(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("""
-                SELECT DATE(created_at) as date, COUNT(*) as count 
-                FROM players 
-                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY DATE(created_at) 
-                ORDER BY date ASC
-            """)
-            return cursor.fetchall()
+            try:
+                cursor.execute("""
+                    SELECT DATE(created_at) as date, COUNT(*) as count 
+                    FROM players 
+                    WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(created_at) 
+                    ORDER BY date ASC
+                """)
+                return cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] players-per-day error: {e}")
+                return []
     finally:
         db.close()
 
@@ -497,14 +590,18 @@ def get_games_per_day(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("""
-                SELECT DATE(achieved_at) as date, COUNT(*) as count 
-                FROM scores 
-                WHERE achieved_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY DATE(achieved_at) 
-                ORDER BY date ASC
-            """)
-            return cursor.fetchall()
+            try:
+                cursor.execute("""
+                    SELECT DATE(achieved_at) as date, COUNT(*) as count 
+                    FROM scores 
+                    WHERE achieved_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(achieved_at) 
+                    ORDER BY date ASC
+                """)
+                return cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] games-per-day error: {e}")
+                return []
     finally:
         db.close()
 
@@ -513,14 +610,18 @@ def get_daily_challenges_analytics(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("""
-                SELECT date, COUNT(*) as count 
-                FROM daily_challenges 
-                WHERE is_completed = 1 AND date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                GROUP BY date 
-                ORDER BY date ASC
-            """)
-            return cursor.fetchall()
+            try:
+                cursor.execute("""
+                    SELECT date, COUNT(*) as count 
+                    FROM daily_challenges 
+                    WHERE is_completed = 1 AND date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                    GROUP BY date 
+                    ORDER BY date ASC
+                """)
+                return cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] daily-challenges error: {e}")
+                return []
     finally:
         db.close()
 
@@ -529,33 +630,43 @@ def get_reward_claims_analytics(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("""
-                SELECT DATE(claimed_at) as date, COUNT(*) as count 
-                FROM rewards 
-                WHERE reward_status = 'claimed' AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY DATE(claimed_at) 
-                ORDER BY date ASC
-            """)
-            chests = cursor.fetchall()
-            
-            cursor.execute("""
-                SELECT DATE(claimed_at) as date, COUNT(*) as count 
-                FROM daily_challenges 
-                WHERE is_claimed = 1 AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY DATE(claimed_at) 
-                ORDER BY date ASC
-            """)
-            daily = cursor.fetchall()
-            
-            cursor.execute("""
-                SELECT DATE(claimed_at) as date, COUNT(*) as count 
-                FROM reward_announcement_claims 
-                WHERE is_claimed = 1 AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY DATE(claimed_at) 
-                ORDER BY date ASC
-            """)
-            bonus = cursor.fetchall()
-            
+            chests, daily, bonus = [], [], []
+            try:
+                cursor.execute("""
+                    SELECT DATE(claimed_at) as date, COUNT(*) as count 
+                    FROM rewards 
+                    WHERE reward_status = 'claimed' AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(claimed_at) 
+                    ORDER BY date ASC
+                """)
+                chests = cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] reward-claims chests error: {e}")
+
+            try:
+                cursor.execute("""
+                    SELECT DATE(claimed_at) as date, COUNT(*) as count 
+                    FROM daily_challenges 
+                    WHERE is_claimed = 1 AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(claimed_at) 
+                    ORDER BY date ASC
+                """)
+                daily = cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] reward-claims daily error: {e}")
+
+            try:
+                cursor.execute("""
+                    SELECT DATE(claimed_at) as date, COUNT(*) as count 
+                    FROM reward_announcement_claims 
+                    WHERE is_claimed = 1 AND claimed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(claimed_at) 
+                    ORDER BY date ASC
+                """)
+                bonus = cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] reward-claims bonus error: {e}")
+
             return {"chests": chests, "daily": daily, "bonus": bonus}
     finally:
         db.close()
@@ -565,14 +676,18 @@ def get_stars_earned(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("""
-                SELECT DATE(created_at) as date, SUM(amount) as total
-                FROM admin_reward_logs
-                WHERE reward_type = 'stars' AND action = 'add' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY DATE(created_at)
-                ORDER BY date ASC
-            """)
-            return cursor.fetchall()
+            try:
+                cursor.execute("""
+                    SELECT DATE(created_at) as date, SUM(amount) as total
+                    FROM admin_reward_logs
+                    WHERE reward_type = 'stars' AND action = 'add' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(created_at)
+                    ORDER BY date ASC
+                """)
+                return cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] stars-earned error: {e}")
+                return []
     finally:
         db.close()
 
@@ -581,14 +696,18 @@ def get_trophies_earned(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("""
-                SELECT DATE(created_at) as date, SUM(amount) as total
-                FROM admin_reward_logs
-                WHERE reward_type = 'trophies' AND action = 'add' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY DATE(created_at)
-                ORDER BY date ASC
-            """)
-            return cursor.fetchall()
+            try:
+                cursor.execute("""
+                    SELECT DATE(created_at) as date, SUM(amount) as total
+                    FROM admin_reward_logs
+                    WHERE reward_type = 'trophies' AND action = 'add' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY DATE(created_at)
+                    ORDER BY date ASC
+                """)
+                return cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] trophies-earned error: {e}")
+                return []
     finally:
         db.close()
 
@@ -597,8 +716,12 @@ def get_difficulty_usage(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("SELECT stage, COUNT(*) as count FROM scores GROUP BY stage")
-            return cursor.fetchall()
+            try:
+                cursor.execute("SELECT stage, COUNT(*) as count FROM scores GROUP BY stage")
+                return cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] difficulty-usage error: {e}")
+                return []
     finally:
         db.close()
 
@@ -607,8 +730,12 @@ def get_theme_usage(admin_id: int = Depends(get_current_admin)):
     db = get_db()
     try:
         with db.cursor() as cursor:
-            cursor.execute("SELECT theme, COUNT(*) as count FROM scores GROUP BY theme")
-            return cursor.fetchall()
+            try:
+                cursor.execute("SELECT theme, COUNT(*) as count FROM scores GROUP BY theme")
+                return cursor.fetchall()
+            except Exception as e:
+                print(f"[Analytics] theme-usage error: {e}")
+                return []
     finally:
         db.close()
 

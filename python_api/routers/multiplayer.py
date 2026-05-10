@@ -1,6 +1,7 @@
 import json
 import random
 import asyncio
+import uuid
 from typing import Dict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -13,60 +14,93 @@ router = APIRouter()
 ROUNDS_TO_WIN = 3
 TOTAL_PAIRS = 8
 
-async def log_match_event(event_type: str, room_id: str, p1_uid: str=None, p2_uid: str=None, 
+async def log_match_event(event_type: str, room_id: str, p1_uid: str=None, p2_uid: str=None,
                           winner_uid: str=None, p1_score: int=0, p2_score: int=0, disconnected_uid: str=None):
+    """Log a multiplayer match event to the database. Never raises — errors are printed only."""
     def _db_op():
         db = get_db()
         try:
             with db.cursor() as cursor:
-                # Resolve numeric IDs
                 def resolve_id(uid):
-                    if not uid: return None
-                    cursor.execute("SELECT id FROM players WHERE id=%s OR google_uid=%s", (uid, uid))
+                    """Safely resolve a player UID (numeric ID or google_uid string) to a DB id."""
+                    if not uid:
+                        return None
+                    # If uid is purely numeric, search by primary key first
+                    if str(uid).isdigit():
+                        cursor.execute("SELECT id FROM players WHERE id = %s", (int(uid),))
+                        res = cursor.fetchone()
+                        if res:
+                            return res['id']
+                    # Otherwise (or as fallback) search by google_uid
+                    cursor.execute("SELECT id FROM players WHERE google_uid = %s", (str(uid),))
                     res = cursor.fetchone()
                     return res['id'] if res else None
-                    
+
                 if event_type == 'start':
                     p1_id = resolve_id(p1_uid)
                     p2_id = resolve_id(p2_uid)
-                    if p1_id and p2_id:
-                        cursor.execute("""
-                            INSERT INTO multiplayer_matches (room_id, player_1_id, player_2_id, status, started_at)
-                            VALUES (%s, %s, %s, 'active', NOW())
-                        """, (room_id, p1_id, p2_id))
-                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
-                                       (p1_id, 'multiplayer_start', f"Started multiplayer match in room {room_id}"))
-                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
-                                       (p2_id, 'multiplayer_start', f"Started multiplayer match in room {room_id}"))
+                    if not p1_id or not p2_id:
+                        print(f"[MP Logging] start: could not resolve player IDs "
+                              f"(p1_uid={p1_uid!r}→{p1_id}, p2_uid={p2_uid!r}→{p2_id}). Skipping DB log.")
+                        return
+                    cursor.execute("""
+                        INSERT INTO multiplayer_matches (room_id, player_1_id, player_2_id, status, started_at)
+                        VALUES (%s, %s, %s, 'active', NOW())
+                    """, (room_id, p1_id, p2_id))
+                    try:
+                        cursor.execute(
+                            "INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                            (p1_id, 'multiplayer_start', f"Started multiplayer match in room {room_id}")
+                        )
+                        cursor.execute(
+                            "INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                            (p2_id, 'multiplayer_start', f"Started multiplayer match in room {room_id}")
+                        )
+                    except Exception as act_err:
+                        print(f"[MP Logging] Activity log error (non-fatal): {act_err}")
+
                 elif event_type == 'end':
                     winner_id = resolve_id(winner_uid)
                     cursor.execute("""
-                        UPDATE multiplayer_matches 
-                        SET status='completed', winner_id=%s, player_1_score=%s, player_2_score=%s, ended_at=NOW(),
+                        UPDATE multiplayer_matches
+                        SET status='completed', winner_id=%s, player_1_score=%s, player_2_score=%s,
+                            ended_at=NOW(),
                             duration_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW())
                         WHERE room_id=%s AND status='active'
                     """, (winner_id, p1_score, p2_score, room_id))
-                    
                     if winner_id:
-                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
-                                       (winner_id, 'multiplayer_win', f"Won multiplayer match in room {room_id}"))
+                        try:
+                            cursor.execute(
+                                "INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                                (winner_id, 'multiplayer_win', f"Won multiplayer match in room {room_id}")
+                            )
+                        except Exception as act_err:
+                            print(f"[MP Logging] Activity log error (non-fatal): {act_err}")
+
                 elif event_type == 'disconnect':
                     disc_id = resolve_id(disconnected_uid)
                     cursor.execute("""
-                        UPDATE multiplayer_matches 
+                        UPDATE multiplayer_matches
                         SET status='disconnected', disconnected_player_id=%s, ended_at=NOW(),
                             duration_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW())
                         WHERE room_id=%s AND status='active'
                     """, (disc_id, room_id))
                     if disc_id:
-                        cursor.execute("INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
-                                       (disc_id, 'multiplayer_disconnect', f"Disconnected from multiplayer match in room {room_id}"))
+                        try:
+                            cursor.execute(
+                                "INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                                (disc_id, 'multiplayer_disconnect',
+                                 f"Disconnected from multiplayer match in room {room_id}")
+                            )
+                        except Exception as act_err:
+                            print(f"[MP Logging] Activity log error (non-fatal): {act_err}")
+
                 db.commit()
         except Exception as e:
-            print(f"[MP Logging Error] {e}")
+            print(f"[MP Logging Error] event={event_type} room={room_id}: {e}")
         finally:
             db.close()
-            
+
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _db_op)
 
@@ -290,7 +324,10 @@ class ConnectionManager:
         self.pending_challenges: Dict[str, str] = {}
         self.active_games: Dict[str, GameSession] = {}
         self.user_to_room: Dict[str, str] = {}
-        self.room_counter = 0
+
+    def _new_room_id(self) -> str:
+        """Generate a unique room ID using UUID so it survives server restarts."""
+        return "room_" + uuid.uuid4().hex[:12]
 
     def _lobby_snapshot(self):
         return [
@@ -412,8 +449,7 @@ class ConnectionManager:
         p1_name = self.lobby[p1_uid]["display_name"]
         p2_name = self.lobby[p2_uid]["display_name"]
 
-        self.room_counter += 1
-        room_id = f"room_{self.room_counter}"
+        room_id = self._new_room_id()
         session = GameSession(room_id, p1_uid, p2_uid, p1_ws, p2_ws, p1_name, p2_name)
         self.active_games[room_id] = session
         self.user_to_room[p1_uid] = room_id

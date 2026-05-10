@@ -123,53 +123,99 @@ def get_active_announcements(player_id: int):
         db.close()
 
 
+class AnnouncementClaimRequest(BaseModel):
+    player_id: int
+    completed: bool = False  # Frontend must send completed=True to confirm task is done
+
+
 @router.post("/announcements/{announcement_id}/claim")
-def claim_announcement(announcement_id: int, req: ClaimRequest):
+def claim_announcement(announcement_id: int, req: AnnouncementClaimRequest):
     db = get_db()
     try:
         with db.cursor() as cursor:
             # 1. Validate announcement exists and is active
-            cursor.execute("SELECT * FROM reward_announcements WHERE id = %s AND status = 'active' AND end_date > NOW()", (announcement_id,))
+            cursor.execute(
+                "SELECT * FROM reward_announcements WHERE id = %s AND status = 'active' AND end_date > NOW()",
+                (announcement_id,)
+            )
             ann = cursor.fetchone()
             if not ann:
                 raise HTTPException(status_code=404, detail="Announcement not found or has expired")
-                
-            # 2. Check if already claimed
-            cursor.execute("SELECT * FROM reward_announcement_claims WHERE announcement_id = %s AND player_id = %s", 
-                          (announcement_id, req.player_id))
+
+            # 2. Validate reward_type to prevent SQL injection in dynamic UPDATE
+            reward_type = ann['reward_type']
+            if reward_type not in ('stars', 'trophies'):
+                raise HTTPException(status_code=500, detail="Invalid reward type in announcement")
+
+            # 3. Lock the claim row to prevent double-claiming (SELECT ... FOR UPDATE)
+            cursor.execute(
+                """SELECT * FROM reward_announcement_claims
+                   WHERE announcement_id = %s AND player_id = %s
+                   FOR UPDATE""",
+                (announcement_id, req.player_id)
+            )
             existing_claim = cursor.fetchone()
-            
+
             if existing_claim and existing_claim['is_claimed'] == 1:
                 raise HTTPException(status_code=400, detail="Already claimed")
-                
-            # 3. Add to claims table
+
+            # 4. Check task completion — require frontend to confirm task is done
+            #    If a claim row already exists with is_completed=1, allow it.
+            #    Otherwise, the frontend must send completed=True.
+            task_completed = (existing_claim and existing_claim['is_completed'] == 1) or req.completed
+            if not task_completed:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Task not completed yet. Complete the task before claiming the reward."
+                )
+
+            # 5. Upsert the claim record
             if not existing_claim:
-                cursor.execute("""
-                    INSERT INTO reward_announcement_claims (announcement_id, player_id, is_completed, is_claimed, claimed_at)
-                    VALUES (%s, %s, 1, 1, NOW())
-                """, (announcement_id, req.player_id))
+                cursor.execute(
+                    """INSERT INTO reward_announcement_claims
+                       (announcement_id, player_id, is_completed, is_claimed, claimed_at)
+                       VALUES (%s, %s, 1, 1, NOW())""",
+                    (announcement_id, req.player_id)
+                )
             else:
-                cursor.execute("""
-                    UPDATE reward_announcement_claims SET is_completed = 1, is_claimed = 1, claimed_at = NOW()
-                    WHERE announcement_id = %s AND player_id = %s
-                """, (announcement_id, req.player_id))
-                
-            # 4. Give reward to player
-            reward_type = ann['reward_type'] # stars or trophies
-            cursor.execute(f"UPDATE players SET {reward_type} = {reward_type} + %s WHERE id = %s", 
-                          (ann['reward_amount'], req.player_id))
-                          
-            # Get new balance
-            cursor.execute(f"SELECT {reward_type} as balance FROM players WHERE id = %s", (req.player_id,))
-            new_balance = cursor.fetchone()['balance']
-            
+                cursor.execute(
+                    """UPDATE reward_announcement_claims
+                       SET is_completed = 1, is_claimed = 1, claimed_at = NOW()
+                       WHERE announcement_id = %s AND player_id = %s""",
+                    (announcement_id, req.player_id)
+                )
+
+            # 6. Give reward to player (reward_type already validated above)
+            cursor.execute(
+                f"UPDATE players SET {reward_type} = {reward_type} + %s WHERE id = %s",
+                (ann['reward_amount'], req.player_id)
+            )
+
+            # 7. Fetch new balances for consistent response
+            cursor.execute("SELECT stars, trophies FROM players WHERE id = %s", (req.player_id,))
+            player_row = cursor.fetchone()
+            total_stars = player_row['stars'] if player_row else 0
+            total_trophies = player_row['trophies'] if player_row else 0
+
+            # 8. Log the activity
+            try:
+                cursor.execute(
+                    "INSERT INTO activities (player_id, action_type, details) VALUES (%s, %s, %s)",
+                    (req.player_id, 'bonus_claim',
+                     f"Claimed {ann['reward_amount']} {reward_type} from announcement #{announcement_id}: {ann['title']}")
+                )
+            except Exception as log_err:
+                print(f"[Rewards] Activity log error (non-fatal): {log_err}")
+
             db.commit()
-            
+
             return {
-                "success": True, 
+                "success": True,
                 "reward_type": reward_type,
                 "amount_claimed": ann['reward_amount'],
-                "new_balance": new_balance,
+                "new_balance": total_stars if reward_type == 'stars' else total_trophies,
+                "total_stars": total_stars,
+                "total_trophies": total_trophies,
                 "message": f"Successfully claimed {ann['reward_amount']} {reward_type}!"
             }
     finally:
