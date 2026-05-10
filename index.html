@@ -303,26 +303,17 @@
           </svg>
           <input class="auth-input" id="reg-name" type="text" placeholder="Display Name" autocomplete="name" />
         </div>
-        <div class="input-group">
-          <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M19 8v6"></path>
-            <path d="M22 11h-6"></path>
-          </svg>
-          <input class="auth-input" id="reg-username" type="text" placeholder="Username (no spaces)"
-            autocomplete="username" />
-        </div>
-        <!-- Email field — visible only for Google-linked accounts -->
-        <div class="input-group" id="reg-email-group" style="display:none;">
+        <!-- Gmail Address field — replaces old username field for manual registration -->
+        <div class="input-group" id="reg-email-group">
           <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
             <polyline points="22,6 12,13 2,6"></polyline>
           </svg>
-          <input class="auth-input" id="reg-email" type="email" placeholder="Gmail address" autocomplete="email"
-            readonly />
+          <input class="auth-input" id="reg-email" type="email" placeholder="example@gmail.com" autocomplete="email" />
+        </div>
+        <div style="font-size:11px;color:#94a3b8;text-align:center;margin:-8px 0 4px;line-height:1.4;">
+          Manual Gmail accounts can play &amp; save progress, but only Google-linked accounts receive the welcome reward.
         </div>
         <div class="input-group">
           <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -1738,27 +1729,37 @@
     }
     async function doRegister() {
       const name = document.getElementById('reg-name').value.trim();
-      const uname = document.getElementById('reg-username').value.trim().toLowerCase().replace(/\s+/g, '');
+      const rawEmail = document.getElementById('reg-email').value.trim().toLowerCase();
       const pass = document.getElementById('reg-password').value;
       const err = document.getElementById('reg-error');
+
       if (!name) { err.textContent = 'Display name is required.'; return; }
-      if (!uname) { err.textContent = 'Username is required.'; return; }
-      if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
-      const users = getUsers();
-      if (users[uname]) { err.textContent = 'Username already taken locally.'; return; }
+      if (!rawEmail) { err.textContent = 'Gmail address is required.'; return; }
 
       const pending = localStorage.getItem('mmPuzzleGooglePending');
-      let googleUid = null;
-      let email = '';
-      let avatar = null;
-      let type = 'local';
+      const isGoogleLinked = !!pending;
 
-      if (pending) {
+      // Only enforce @gmail.com for manual (non-Google-linked) registrations
+      if (!isGoogleLinked && !rawEmail.endsWith('@gmail.com')) {
+        err.textContent = 'Please enter a valid Gmail address ending with @gmail.com.';
+        return;
+      }
+      if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
+
+      // Auto-derive username from email prefix
+      const uname = rawEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+      let googleUid = null;
+      let avatar = null;
+      let type = 'manual';
+      let email = rawEmail;
+
+      if (isGoogleLinked) {
         try {
           const g = JSON.parse(pending);
           type = 'google';
           avatar = g.avatar;
-          email = g.email;
+          email = g.email || rawEmail;
           googleUid = g.uid;
         } catch (e) { }
       }
@@ -1768,8 +1769,7 @@
 
       // Register on backend FIRST
       let numericId = uname;
-      let emailSent = true;
-      let backendMsg = 'Account created successfully! Please login.';
+      let backendMsg = 'Account created! You may now log in.';
       try {
         const res = await fetch(`${PYTHON_API}/auth/register`, {
           method: 'POST',
@@ -1792,10 +1792,7 @@
         if (data.user && data.user.id) {
           numericId = data.user.id;
         }
-        if (data.email_sent === false) {
-          emailSent = false;
-          backendMsg = data.message || 'Account created successfully, but welcome email failed to send.';
-        } else if (data.message) {
+        if (data.message) {
           backendMsg = data.message;
         }
       } catch (e) {
@@ -1806,26 +1803,21 @@
 
       // Success - save locally with numeric ID
       if (pending) localStorage.removeItem('mmPuzzleGooglePending');
+      const users = getUsers();
       users[uname] = { id: numericId, name, username: uname, type, avatar, email, googleUid, pass };
       saveUsers(users);
 
       // Clear registration form
       document.getElementById('reg-name').value = '';
-      document.getElementById('reg-username').value = '';
+      document.getElementById('reg-email').value = '';
       document.getElementById('reg-password').value = '';
-      // Pre-fill login username
-      document.getElementById('login-username').value = uname;
+      // Pre-fill login with the email (login accepts email or username)
+      document.getElementById('login-username').value = email;
       // Switch to login tab and show success message
       switchAuthTab('login');
       const loginErr = document.getElementById('login-error');
-
-      if (!emailSent) {
-        loginErr.style.color = '#fbbf24'; // Warning yellow
-        loginErr.textContent = backendMsg;
-      } else {
-        loginErr.style.color = '#4ade80'; // Success green
-        loginErr.textContent = 'Account created successfully! Welcome email sent.';
-      }
+      loginErr.style.color = '#4ade80';
+      loginErr.textContent = backendMsg;
 
       setTimeout(() => {
         loginErr.style.color = '#f87171'; // Revert to red
@@ -1944,9 +1936,9 @@
         }));
         // Pre-fill the register form
         document.getElementById('reg-name').value = user.displayName || '';
-        const suggestedUsername = (user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-        document.getElementById('reg-username').value = suggestedUsername;
+        // Pre-fill email field with the Google email (it's always @gmail.com)
         document.getElementById('reg-email').value = user.email || '';
+        document.getElementById('reg-email').setAttribute('readonly', 'true');
         document.getElementById('reg-email-group').style.display = '';
         // Clear the password field so user must type one
         document.getElementById('reg-password').value = '';

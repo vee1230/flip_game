@@ -20,12 +20,15 @@ router = APIRouter()
 
 
 class RegisterRequest(BaseModel):
-    username: str
     display_name: str
     password: str
-    email: Optional[str] = ""
-    google_uid: Optional[str] = None
+    email: str                         # Required — must end with @gmail.com
+    username: Optional[str] = None     # Auto-derived from email if not provided
+    google_uid: Optional[str] = None   # Set only by Google OAuth flow on frontend
     avatar: Optional[str] = None
+    # NOTE: auth_provider is intentionally NOT accepted here.
+    # account_type is determined by the server based on google_uid presence,
+    # never by a frontend-supplied string (prevents privilege spoofing).
 
 class TestEmailRequest(BaseModel):
     email: str
@@ -49,76 +52,119 @@ def hash_password(plain: str) -> str:
 
 @router.post("/register")
 def register(req: RegisterRequest):
-    if not req.username or not req.display_name or not req.password:
+    # ── Basic field validation ──────────────────────────────────────────────
+    if not req.display_name or not req.password:
         raise HTTPException(status_code=400, detail="Missing required fields.")
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    if not req.email:
+        raise HTTPException(status_code=400, detail="Gmail address is required.")
+
+    # ── Email normalisation ─────────────────────────────────────────────────
+    email = req.email.strip().lower()
+
+    # ── Gmail-only enforcement (backend — never trust frontend only) ────────
+    # Google-linked accounts use a firebase uid; their email is pre-verified.
+    # Manual accounts MUST supply a @gmail.com address.
+    if not req.google_uid and not email.endswith("@gmail.com"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please enter a valid Gmail address ending with @gmail.com."
+        )
+
+    # ── Determine account_type on the SERVER — never from the request body ──
+    # A frontend that sends google_uid without a real Firebase token is still
+    # just treated as a Google-linked account at registration time only.
+    # The actual Google rewards are issued exclusively in /google/callback and
+    # /firebase/sync which verify tokens directly with Google/Firebase.
+    is_google_linked = bool(req.google_uid)
+    account_type = "google" if is_google_linked else "manual"
+
+    # ── Derive username from email prefix if not supplied ───────────────────
+    username = (req.username or "").strip() or email.split("@")[0].lower()
+    # Sanitise: keep only a-z, 0-9 and underscores
+    username = "".join(c for c in username if c.isalnum() or c == "_")
+    if not username:
+        username = "player"
+
+    hashed = hash_password(req.password)
 
     db = get_db()
     try:
         with db.cursor() as cursor:
-            # Check if user already exists
-            cursor.execute("SELECT id, password_hash, google_uid FROM players WHERE username=%s OR email=%s", (req.username, req.email))
+            # ── Duplicate email / username check ────────────────────────────
+            cursor.execute(
+                "SELECT id, password_hash, google_uid FROM players WHERE email=%s OR username=%s",
+                (email, username)
+            )
             existing = cursor.fetchone()
-            
-            hashed = hash_password(req.password)
-            account_type = "google" if req.google_uid else "registered"
 
             email_sent_status = False
 
             if existing:
-                # If they have a password already, it's a conflict
+                # Row exists but has no password → Google user finalising account
                 if existing.get("password_hash"):
-                    raise HTTPException(status_code=409, detail="Username or email already taken.")
-                
-                # If they are a Google user without a password, update them (finalize registration)
+                    raise HTTPException(status_code=409, detail="Email or username is already registered.")
+
+                # Finalise: attach password + display name to existing Google row
                 cursor.execute(
-                    """UPDATE players 
-                       SET display_name=%s, username=%s, password_hash=%s, account_type=%s, google_uid=%s, profile_picture=%s
+                    """UPDATE players
+                       SET display_name=%s, username=%s, password_hash=%s,
+                           account_type=%s, google_uid=%s, profile_picture=%s
                        WHERE id=%s""",
-                    (req.display_name, req.username, hashed, account_type, req.google_uid or existing.get("google_uid"), req.avatar, existing["id"])
+                    (
+                        req.display_name, username, hashed, account_type,
+                        req.google_uid or existing.get("google_uid"),
+                        req.avatar, existing["id"]
+                    )
                 )
                 new_id = existing["id"]
-                
-                # Send welcome email for Google-linked users who just finalized their account
-                if req.email:
-                    email_sent_status = send_welcome_email(req.email, req.display_name)
+
             else:
-                # Normal new registration
+                # ── Brand-new registration ──────────────────────────────────
                 cursor.execute(
                     """INSERT INTO players
-                       (display_name, username, email, password_hash, account_type, status, google_uid, profile_picture, stars)
-                       VALUES (%s, %s, %s, %s, %s, 'Active', %s, %s, 0)""",
-                    (req.display_name, req.username, req.email, hashed,
-                     account_type, req.google_uid, req.avatar)
+                       (display_name, username, email, password_hash,
+                        account_type, status, google_uid, profile_picture,
+                        stars, email_verified)
+                       VALUES (%s, %s, %s, %s, %s, 'Active', %s, %s, 0, %s)""",
+                    (
+                        req.display_name, username, email, hashed,
+                        account_type, req.google_uid, req.avatar,
+                        1 if is_google_linked else 0
+                    )
                 )
                 new_id = cursor.lastrowid
-                
-                # Create a pending welcome reward for the new user
-                cursor.execute(
-                    """INSERT INTO rewards 
-                       (player_id, reward_type, reward_amount, reward_status, source)
-                       VALUES (%s, 'welcome_bonus', 50, 'pending', 'manual_signup')""",
-                    (new_id,)
-                )
-                
-                # Send welcome email
-                if req.email:
-                    email_sent_status = send_welcome_email(req.email, req.display_name)
+
+                # ── Welcome reward: ONLY for verified Google-linked accounts ─
+                # Manual @gmail.com accounts never receive the welcome_bonus.
+                # (Google rewards via firebase/sync and google/callback already
+                #  have their own reward INSERT — this path is for finalize only)
+                # NOTE: We deliberately do NOT insert any reward here even for
+                # google-linked accounts because the frontend already went through
+                # doGoogleRegister() → firebase/sync which inserts the reward.
+                # Adding it here again would create duplicates.
+
+                # Send welcome email only if email is provided
+                if email:
+                    try:
+                        email_sent_status = send_welcome_email(email, req.display_name)
+                    except Exception:
+                        email_sent_status = False
 
             db.commit()
-            
-            msg = "Account created successfully" if email_sent_status else "Account created successfully, but email could not be sent"
-            
+
+            msg = "Account created! You may now log in."
+
             return {
                 "success": True,
                 "message": msg,
                 "email_sent": email_sent_status,
                 "user": {
                     "id":       new_id,
-                    "username": req.username,
+                    "username": username,
                     "name":     req.display_name,
-                    "email":    req.email,
+                    "email":    email,
                     "type":     account_type,
                     "avatar":   req.avatar,
                     "trophies": 0,

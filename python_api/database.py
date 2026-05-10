@@ -172,6 +172,10 @@ def init_db():
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN stars INT(11) NOT NULL DEFAULT 0")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN trophies INT(11) NOT NULL DEFAULT 0")
             _safe_alter(cursor, "ALTER TABLE players ADD COLUMN last_login TIMESTAMP NULL DEFAULT NULL")
+            # Phase 4: email_verified (0 = unverified manual, 1 = Google-verified)
+            _safe_alter(cursor, "ALTER TABLE players ADD COLUMN email_verified tinyint(1) NOT NULL DEFAULT 0")
+            # account_type safety (in case legacy rows missing it)
+            _safe_alter(cursor, "ALTER TABLE players ADD COLUMN account_type varchar(50) DEFAULT 'manual'")
 
             # 9. Ensure rewards columns exist
             _safe_alter(cursor, "ALTER TABLE rewards ADD COLUMN reward_type varchar(50) NOT NULL DEFAULT 'trophies'")
