@@ -91,7 +91,7 @@ def admin_login(req: AdminLoginRequest):
             token = jwt.encode({
                 "admin_id": admin["id"],
                 "username": admin["username"],
-                "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
             }, JWT_SECRET, algorithm=JWT_ALGORITHM)
             
             return {
@@ -115,29 +115,28 @@ def get_overview(admin_id: int = Depends(get_current_admin)):
     try:
         with db.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) as total FROM players")
-            total_players = cursor.fetchone()['total']
+            total_players = (cursor.fetchone() or {}).get('total', 0)
 
             cursor.execute("SELECT COUNT(*) as active FROM players WHERE last_login >= NOW() - INTERVAL 7 DAY")
-            active_players = cursor.fetchone()['active']
+            active_players = (cursor.fetchone() or {}).get('active', 0)
 
             cursor.execute("SELECT COUNT(*) as total FROM scores")
-            total_games = cursor.fetchone()['total']
+            total_games = (cursor.fetchone() or {}).get('total', 0)
 
             cursor.execute("SELECT MAX(score) as max_score FROM scores")
-            max_score_row = cursor.fetchone()
-            max_score = max_score_row['max_score'] if max_score_row and max_score_row['max_score'] is not None else 0
+            max_score = (cursor.fetchone() or {}).get('max_score') or 0
 
             cursor.execute("SELECT SUM(stars) as total FROM players")
-            total_stars = cursor.fetchone()['total'] or 0
+            total_stars = (cursor.fetchone() or {}).get('total') or 0
 
             cursor.execute("SELECT SUM(trophies) as total FROM players")
-            total_trophies = cursor.fetchone()['total'] or 0
+            total_trophies = (cursor.fetchone() or {}).get('total') or 0
 
             cursor.execute("SELECT COUNT(*) as total FROM daily_challenges WHERE is_completed = 1")
-            total_daily_challenges = cursor.fetchone()['total'] or 0
+            total_daily_challenges = (cursor.fetchone() or {}).get('total', 0)
 
             cursor.execute("SELECT COUNT(*) as total FROM multiplayer_matches")
-            total_multiplayer = cursor.fetchone()['total'] or 0
+            total_multiplayer = (cursor.fetchone() or {}).get('total', 0)
 
             return {
                 'total_players': total_players,
@@ -500,19 +499,19 @@ def get_analytics_overview(admin_id: int = Depends(get_current_admin)):
             }
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM players")
-                stats['total_players'] = cursor.fetchone()['c']
+                stats['total_players'] = (cursor.fetchone() or {}).get('c', 0)
             except Exception as e:
                 print(f"[Analytics] players count error: {e}")
 
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM players WHERE last_login >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
-                stats['active_players'] = cursor.fetchone()['c']
+                stats['active_players'] = (cursor.fetchone() or {}).get('c', 0)
             except Exception as e:
                 print(f"[Analytics] active_players error: {e}")
 
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM scores")
-                stats['total_games'] = cursor.fetchone()['c']
+                stats['total_games'] = (cursor.fetchone() or {}).get('c', 0)
                 cursor.execute("SELECT MAX(score) as m FROM scores")
                 row = cursor.fetchone()
                 stats['highest_score'] = row['m'] or 0 if row else 0
@@ -529,35 +528,35 @@ def get_analytics_overview(admin_id: int = Depends(get_current_admin)):
 
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM daily_challenges WHERE is_completed = 1")
-                stats['total_daily_challenges'] = cursor.fetchone()['c']
+                stats['total_daily_challenges'] = (cursor.fetchone() or {}).get('c', 0)
             except Exception as e:
                 print(f"[Analytics] daily_challenges error: {e}")
 
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM rewards WHERE reward_status = 'claimed'")
-                stats['total_reward_chests'] = cursor.fetchone()['c']
+                stats['total_reward_chests'] = (cursor.fetchone() or {}).get('c', 0)
             except Exception as e:
                 print(f"[Analytics] rewards error: {e}")
 
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM reward_announcement_claims WHERE is_claimed = 1")
-                stats['total_bonus_claims'] = cursor.fetchone()['c']
+                stats['total_bonus_claims'] = (cursor.fetchone() or {}).get('c', 0)
             except Exception as e:
                 print(f"[Analytics] bonus_claims error: {e}")
 
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM multiplayer_matches")
-                stats['total_multiplayer_matches'] = cursor.fetchone()['c']
+                stats['total_multiplayer_matches'] = (cursor.fetchone() or {}).get('c', 0)
                 cursor.execute("SELECT COUNT(*) as c FROM multiplayer_matches WHERE status = 'active'")
-                stats['active_multiplayer_matches'] = cursor.fetchone()['c']
+                stats['active_multiplayer_matches'] = (cursor.fetchone() or {}).get('c', 0)
             except Exception as e:
                 print(f"[Analytics] multiplayer error: {e}")
 
             try:
                 cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NOT NULL AND fcm_token != ''")
-                stats['tokens_active'] = cursor.fetchone()['c']
+                stats['tokens_active'] = (cursor.fetchone() or {}).get('c', 0)
                 cursor.execute("SELECT COUNT(*) as c FROM players WHERE fcm_token IS NULL OR fcm_token = ''")
-                stats['tokens_inactive'] = cursor.fetchone()['c']
+                stats['tokens_inactive'] = (cursor.fetchone() or {}).get('c', 0)
             except Exception as e:
                 print(f"[Analytics] fcm_token error: {e}")
 

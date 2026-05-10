@@ -2,8 +2,15 @@ import json
 import random
 import asyncio
 import uuid
-from typing import Dict
+from typing import Dict, Optional, cast, TypedDict, List, Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+class PlayerState(TypedDict):
+    ws: WebSocket
+    name: str
+    rounds_won: int
+    flipped: List[int]
+    matched: Set[int]
 
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -14,8 +21,8 @@ router = APIRouter()
 ROUNDS_TO_WIN = 3
 TOTAL_PAIRS = 8
 
-async def log_match_event(event_type: str, room_id: str, p1_uid: str=None, p2_uid: str=None,
-                          winner_uid: str=None, p1_score: int=0, p2_score: int=0, disconnected_uid: str=None):
+async def log_match_event(event_type: str, room_id: str, p1_uid: Optional[str]=None, p2_uid: Optional[str]=None,
+                          winner_uid: Optional[str]=None, p1_score: int=0, p2_score: int=0, disconnected_uid: Optional[str]=None):
     """Log a multiplayer match event to the database. Never raises — errors are printed only."""
     def _db_op():
         db = get_db()
@@ -113,7 +120,7 @@ class GameSession:
         self.p1_uid = p1_uid
         self.p2_uid = p2_uid
         # Per-player state: independent flipping & matching
-        self.players = {
+        self.players: Dict[str, PlayerState] = {
             p1_uid: {"ws": p1_ws, "name": p1_name, "rounds_won": 0,
                      "flipped": [], "matched": set()},
             p2_uid: {"ws": p2_ws, "name": p2_name, "rounds_won": 0,

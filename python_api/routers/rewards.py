@@ -26,7 +26,7 @@ def get_pending_rewards(player_id: int):
                 "SELECT COUNT(*) as count FROM rewards WHERE player_id = %s AND reward_status = 'claimed'",
                 (player_id,)
             )
-            claimed_count = cursor.fetchone()["count"]
+            claimed_count = (cursor.fetchone() or {}).get("count", 0)
 
             return {
                 "pending": pending,
