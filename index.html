@@ -2061,50 +2061,52 @@
       const rawInput = document.getElementById('login-username').value.trim();
       const pass = document.getElementById('login-password').value;
       const err = document.getElementById('login-error');
+      
+      err.style.color = '#f87171';
       if (!rawInput || !pass) { err.textContent = 'Enter email/username and password.'; return; }
+      
       const uname = rawInput.toLowerCase();
       // Admin intercept
       if (uname === 'admin' && pass === 'admin123') {
         window.location.href = 'admin/dashboard.html';
         return;
       }
-      const users = getUsers();
-      // Support login by username OR email
-      let found = users[uname]; // try username first
-      if (!found) {
-        // Try email match
-        const emailKey = Object.keys(users).find(k => users[k].email && users[k].email.toLowerCase() === uname);
-        if (emailKey) found = users[emailKey];
-      }
-      if (!found || found.pass !== pass) { err.textContent = 'Invalid email/username or password.'; return; }
-      // Use the stored numeric DB id if available, otherwise use username
-      const userId = found.id && !isNaN(parseInt(found.id)) ? found.id : uname;
-      const user = {
-        id: userId,
-        name: found.name,
-        username: found.username,
-        type: found.type || 'local',
-        avatar: found.avatar || null,
-        email: found.email || '',
-        firebaseUid: found.googleUid || null
-      };
-
-      if (isNaN(parseInt(userId)) && found.email) {
-        try {
-          const res = await fetch(`${PYTHON_API}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identifier: found.email, password: pass })
-          });
-          const data = await res.json();
-          if (res.ok && data.user && data.user.id) {
-            user.id = data.user.id;
-            // Update stored id
-            found.id = data.user.id;
-            users[uname] = { ...found };
-            saveUsers(users);
-          }
-        } catch (e) { /* non-critical */ }
+      
+      err.textContent = 'Logging in...';
+      err.style.color = '#94a3b8';
+      
+      try {
+        const res = await fetch(`${PYTHON_API}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: rawInput, password: pass })
+        });
+        const data = await res.json();
+        
+        if (res.ok && data.user) {
+          const user = {
+            id: data.user.id,
+            name: data.user.name,
+            username: data.user.username,
+            type: data.user.type || 'local',
+            avatar: data.user.avatar || null,
+            email: data.user.email || '',
+            firebaseUid: data.user.google_uid || null
+          };
+          
+          // Sync with local storage for legacy code that might rely on it
+          const users = getUsers();
+          users[data.user.username] = { ...users[data.user.username], ...user, pass: pass };
+          saveUsers(users);
+          
+          setSession(user);
+        } else {
+          err.style.color = '#f87171';
+          err.textContent = data.detail || 'Invalid email/username or password.';
+        }
+      } catch (e) {
+        err.style.color = '#f87171';
+        err.textContent = 'Network error. Backend might be down.';
       }
 
       setSession(user);
