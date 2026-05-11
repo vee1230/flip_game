@@ -510,7 +510,7 @@ def verify_otp(req: VerifyOtpRequest):
     try:
         with db.cursor() as cursor:
             cursor.execute(
-                "SELECT id, otp_hash, attempts, is_used, expires_at FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
+                "SELECT id, otp_hash, attempts, is_used, expires_at, NOW() as current_time FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
                 (email,)
             )
             record = cursor.fetchone()
@@ -518,9 +518,7 @@ def verify_otp(req: VerifyOtpRequest):
             if not record or record["is_used"] or record["attempts"] >= 5:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
-            cursor.execute("SELECT NOW() as current_time")
-            now_res = cursor.fetchone()
-            if record["expires_at"] < now_res["current_time"]:
+            if record["expires_at"] < record["current_time"]:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
             if record["otp_hash"] != hashed:
@@ -547,7 +545,7 @@ def reset_password(req: ResetPasswordRequest):
     try:
         with db.cursor() as cursor:
             cursor.execute(
-                "SELECT id, otp_hash, attempts, is_used, expires_at FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
+                "SELECT id, otp_hash, attempts, is_used, expires_at, NOW() as current_time FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
                 (email,)
             )
             record = cursor.fetchone()
@@ -555,9 +553,7 @@ def reset_password(req: ResetPasswordRequest):
             if not record or record["is_used"] or record["attempts"] >= 5:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
-            cursor.execute("SELECT NOW() as current_time")
-            now_res = cursor.fetchone()
-            if record["expires_at"] < now_res["current_time"]:
+            if record["expires_at"] < record["current_time"]:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
             if record["otp_hash"] != hashed_otp:
@@ -569,7 +565,7 @@ def reset_password(req: ResetPasswordRequest):
             new_password_hash = hash_password(req.new_password)
             
             # Update player password
-            cursor.execute("UPDATE players SET password_hash=%s WHERE email=%s AND account_type='manual'", (new_password_hash, email))
+            cursor.execute("UPDATE players SET password_hash=%s WHERE email=%s", (new_password_hash, email))
             
             # Mark OTP as used
             cursor.execute("UPDATE password_reset_otps SET is_used=1, used_at=CURRENT_TIMESTAMP WHERE id=%s", (record["id"],))
