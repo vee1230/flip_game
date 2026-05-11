@@ -6,8 +6,12 @@ import os
 import hashlib
 import httpx
 import urllib.parse
+import hmac
+import secrets
+import random
+import string
 from database import get_db
-from utils.mailer import send_welcome_email
+from utils.mailer import send_welcome_email, send_otp_email
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
@@ -46,8 +50,29 @@ class FirebaseSyncRequest(BaseModel):
     avatar: Optional[str] = None
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class VerifyOtpRequest(BaseModel):
+    email: str
+    otp: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
+
 def hash_password(plain: str) -> str:
     return hashlib.sha256(plain.encode()).hexdigest()
+
+OTP_SECRET_KEY = os.getenv("OTP_SECRET_KEY", "fallback-secret-key-do-not-use-in-prod")
+
+def hash_otp(otp: str, email: str) -> str:
+    message = f"{otp}:{email}".encode('utf-8')
+    return hmac.new(OTP_SECRET_KEY.encode('utf-8'), message, hashlib.sha256).hexdigest()
 
 
 @router.post("/register")
@@ -430,5 +455,126 @@ def firebase_sync(req: FirebaseSyncRequest):
                     "stars": stars
                 }
             }
+    finally:
+        db.close()
+
+
+@router.post("/forgot-password/request-otp")
+def request_otp(req: ForgotPasswordRequest):
+    email = req.email.strip().lower()
+    if not email.endswith("@gmail.com"):
+        raise HTTPException(status_code=400, detail="Please enter a valid Gmail address ending with @gmail.com.")
+    
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            # Check if email exists
+            cursor.execute("SELECT id FROM players WHERE email=%s AND account_type='manual'", (email,))
+            user = cursor.fetchone()
+            
+            # Note: We must always return the same generic message.
+            generic_message = "If this Gmail is registered, an OTP will be sent."
+            
+            if user:
+                # Mark previous OTPs as expired/used
+                cursor.execute("UPDATE password_reset_otps SET is_used=1 WHERE email=%s", (email,))
+                
+                # Generate 6-digit OTP
+                otp = ''.join(random.choices(string.digits, k=6))
+                hashed = hash_otp(otp, email)
+                
+                cursor.execute(
+                    "INSERT INTO password_reset_otps (email, otp_hash, expires_at) VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))",
+                    (email, hashed)
+                )
+                db.commit()
+                
+                send_otp_email(email, otp)
+                
+            return {"success": True, "message": generic_message}
+    finally:
+        db.close()
+
+
+@router.post("/forgot-password/verify-otp")
+def verify_otp(req: VerifyOtpRequest):
+    email = req.email.strip().lower()
+    otp = req.otp.strip()
+    
+    if len(otp) != 6 or not otp.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+        
+    hashed = hash_otp(otp, email)
+    
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, otp_hash, attempts, is_used, expires_at FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
+                (email,)
+            )
+            record = cursor.fetchone()
+            
+            if not record or record["is_used"] or record["attempts"] >= 5:
+                raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+                
+            cursor.execute("SELECT NOW() as current_time")
+            now_res = cursor.fetchone()
+            if record["expires_at"] < now_res["current_time"]:
+                raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+                
+            if record["otp_hash"] != hashed:
+                cursor.execute("UPDATE password_reset_otps SET attempts = attempts + 1 WHERE id=%s", (record["id"],))
+                db.commit()
+                raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+                
+            return {"success": True, "message": "OTP verified successfully."}
+    finally:
+        db.close()
+
+
+@router.post("/forgot-password/reset")
+def reset_password(req: ResetPasswordRequest):
+    email = req.email.strip().lower()
+    otp = req.otp.strip()
+    
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+        
+    hashed_otp = hash_otp(otp, email)
+    
+    db = get_db()
+    try:
+        with db.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, otp_hash, attempts, is_used, expires_at FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
+                (email,)
+            )
+            record = cursor.fetchone()
+            
+            if not record or record["is_used"] or record["attempts"] >= 5:
+                raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+                
+            cursor.execute("SELECT NOW() as current_time")
+            now_res = cursor.fetchone()
+            if record["expires_at"] < now_res["current_time"]:
+                raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+                
+            if record["otp_hash"] != hashed_otp:
+                cursor.execute("UPDATE password_reset_otps SET attempts = attempts + 1 WHERE id=%s", (record["id"],))
+                db.commit()
+                raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+                
+            # Hash new password
+            new_password_hash = hash_password(req.new_password)
+            
+            # Update player password
+            cursor.execute("UPDATE players SET password_hash=%s WHERE email=%s AND account_type='manual'", (new_password_hash, email))
+            
+            # Mark OTP as used
+            cursor.execute("UPDATE password_reset_otps SET is_used=1, used_at=CURRENT_TIMESTAMP WHERE id=%s", (record["id"],))
+            db.commit()
+            
+            return {"success": True, "message": "Password reset successfully. Please login with your new password."}
     finally:
         db.close()

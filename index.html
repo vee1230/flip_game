@@ -291,6 +291,9 @@
         <div class="auth-error" id="login-error"></div>
         <button class="btn-primary" onclick="doLogin()"
           style="max-width:none;padding:16px;font-size:15px;border-radius:14px;animation:none;">Login</button>
+        <div style="text-align: center; margin-top: 16px;">
+          <a href="#" onclick="showForgotPasswordModal(event)" style="color: #a78bfa; font-size: 13px; text-decoration: none; font-weight: 600;">Forgot Password?</a>
+        </div>
         <!-- Google Login removed per request -->
       </div>
       <!-- REGISTER FORM -->
@@ -662,6 +665,59 @@
           <button id="challenge-decline-btn" class="btn-secondary"
             style="padding: 12px 20px; font-size: 16px; border-radius: 12px; flex: 1;">Decline</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ===================== FORGOT PASSWORD MODAL ===================== -->
+    <div id="forgot-password-modal" style="display:none; position:fixed; inset:0; z-index:10500; align-items:center; justify-content:center; flex-direction:column;" aria-modal="true">
+      <div style="position:absolute; inset:0; background:rgba(8,5,30,0.92); backdrop-filter:blur(6px);"></div>
+      <div style="position:relative; z-index:1; max-width:420px; width:92%; background:linear-gradient(145deg,#1a0a3a,#0d1b3e); border:2px solid #7c3aed; border-radius:24px; padding:32px 28px 28px; box-shadow:0 0 40px rgba(124,58,237,0.5), 0 0 80px rgba(0,255,255,0.1); text-align:center;">
+        
+        <h2 style="font-family:'Outfit',sans-serif; font-size:26px; font-weight:900; background:linear-gradient(90deg,#a78bfa,#67e8f9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:10px;">
+          Forgot Password
+        </h2>
+        
+        <div id="fp-step-1">
+          <p style="color:#94a3b8; font-size:14px; margin-bottom:24px;">Reset your password using your Gmail account.</p>
+          
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(124,58,237,0.5); border-radius:16px; padding:16px; margin-bottom:24px; text-align:left; display:flex; align-items:center; gap:16px;">
+            <div style="font-size:28px; background:linear-gradient(135deg, #a78bfa, #67e8f9); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">📧</div>
+            <div>
+              <div style="color:#fff; font-weight:700; font-size:16px; margin-bottom:4px;">Get code via Gmail</div>
+              <div style="color:#94a3b8; font-size:13px; line-height:1.4;">Send a 6-digit OTP to your registered Gmail address</div>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <input class="auth-input" id="fp-email" type="email" placeholder="Gmail Address" />
+          </div>
+          <div class="auth-error" id="fp-error-1" style="color:#f87171; font-size:12px; margin-bottom:10px;"></div>
+          <button class="btn-primary" onclick="requestOtp()" style="width:100%; padding:14px; margin-bottom:10px; border-radius:12px;">Send OTP</button>
+          <button class="btn-secondary" onclick="closeForgotPasswordModal()" style="width:100%; padding:14px; border-radius:12px;">Back to Login</button>
+        </div>
+
+        <div id="fp-step-2" style="display:none;">
+          <p style="color:#e0e7ff; font-size:14px; margin-bottom:20px;" id="fp-msg-2"></p>
+          <div class="input-group">
+            <input class="auth-input" id="fp-otp" type="text" placeholder="Enter 6-digit OTP" maxlength="6" style="text-align:center; font-size:20px; letter-spacing:5px;" />
+          </div>
+          <div class="auth-error" id="fp-error-2" style="color:#f87171; font-size:12px; margin-bottom:10px;"></div>
+          <button class="btn-primary" onclick="verifyOtp()" style="width:100%; padding:14px; margin-bottom:10px; border-radius:12px;">Verify OTP</button>
+          <button class="btn-secondary" onclick="requestOtp()" style="width:100%; padding:14px; border-radius:12px;">Resend OTP</button>
+        </div>
+
+        <div id="fp-step-3" style="display:none;">
+          <p style="color:#e0e7ff; font-size:14px; margin-bottom:20px;" id="fp-msg-3">Create your new password.</p>
+          <div class="input-group">
+            <input class="auth-input" id="fp-new-password" type="password" placeholder="New Password (min 6 chars)" />
+          </div>
+          <div class="input-group">
+            <input class="auth-input" id="fp-confirm-password" type="password" placeholder="Confirm Password" />
+          </div>
+          <div class="auth-error" id="fp-error-3" style="color:#f87171; font-size:12px; margin-bottom:10px;"></div>
+          <button class="btn-primary" onclick="resetPassword()" style="width:100%; padding:14px; margin-bottom:10px; border-radius:12px;">Reset Password</button>
+        </div>
+
       </div>
     </div>
 
@@ -1846,6 +1902,122 @@
         }
       }, 5000);
     }
+    // ===================== FORGOT PASSWORD LOGIC =====================
+    function showForgotPasswordModal(e) {
+      if (e) e.preventDefault();
+      document.getElementById('fp-step-1').style.display = 'block';
+      document.getElementById('fp-step-2').style.display = 'none';
+      document.getElementById('fp-step-3').style.display = 'none';
+      document.getElementById('fp-email').value = '';
+      document.getElementById('fp-otp').value = '';
+      document.getElementById('fp-new-password').value = '';
+      document.getElementById('fp-confirm-password').value = '';
+      document.getElementById('fp-error-1').textContent = '';
+      document.getElementById('forgot-password-modal').style.display = 'flex';
+    }
+
+    function closeForgotPasswordModal() {
+      document.getElementById('forgot-password-modal').style.display = 'none';
+    }
+
+    async function requestOtp() {
+      const email = document.getElementById('fp-email').value.trim();
+      const err = document.getElementById('fp-error-1');
+      const err2 = document.getElementById('fp-error-2');
+      err.textContent = '';
+      if (err2) err2.textContent = '';
+      
+      if (!email || !email.endsWith('@gmail.com')) {
+        err.textContent = 'Please enter a valid Gmail address ending with @gmail.com.';
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${PYTHON_API}/auth/forgot-password/request-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+          document.getElementById('fp-step-1').style.display = 'none';
+          document.getElementById('fp-step-2').style.display = 'block';
+          document.getElementById('fp-msg-2').textContent = 'A 6-digit OTP has been sent to your Gmail.';
+        } else {
+          err.textContent = data.detail || 'Failed to request OTP.';
+        }
+      } catch (e) {
+        err.textContent = 'Network error. Please try again.';
+      }
+    }
+
+    async function verifyOtp() {
+      const email = document.getElementById('fp-email').value.trim();
+      const otp = document.getElementById('fp-otp').value.trim();
+      const err = document.getElementById('fp-error-2');
+      err.textContent = '';
+      
+      if (!otp || otp.length !== 6 || isNaN(otp)) {
+        err.textContent = 'Invalid or expired OTP.';
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${PYTHON_API}/auth/forgot-password/verify-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+          document.getElementById('fp-step-2').style.display = 'none';
+          document.getElementById('fp-step-3').style.display = 'block';
+        } else {
+          err.textContent = data.detail || 'Invalid or expired OTP.';
+        }
+      } catch (e) {
+        err.textContent = 'Network error. Please try again.';
+      }
+    }
+
+    async function resetPassword() {
+      const email = document.getElementById('fp-email').value.trim();
+      const otp = document.getElementById('fp-otp').value.trim();
+      const newPass = document.getElementById('fp-new-password').value;
+      const confirmPass = document.getElementById('fp-confirm-password').value;
+      const err = document.getElementById('fp-error-3');
+      err.textContent = '';
+      
+      if (newPass.length < 6) {
+        err.textContent = 'Password must be at least 6 characters.';
+        return;
+      }
+      if (newPass !== confirmPass) {
+        err.textContent = 'Passwords do not match.';
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${PYTHON_API}/auth/forgot-password/reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp, new_password: newPass })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+          alert('Password reset successfully. Please login with your new password.');
+          closeForgotPasswordModal();
+        } else {
+          err.textContent = data.detail || 'Failed to reset password.';
+        }
+      } catch (e) {
+        err.textContent = 'Network error. Please try again.';
+      }
+    }
+
     async function doLogin() {
       const rawInput = document.getElementById('login-username').value.trim();
       const pass = document.getElementById('login-password').value;

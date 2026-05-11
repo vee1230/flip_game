@@ -190,3 +190,26 @@ def send_leaderboard_alert_email(to_email: str, to_name: str, subject: str, mess
         return _send_via_brevo(to_email, to_name, subject, html)
     else:
         return _send_via_smtp(to_email, to_name, subject, html)
+
+def send_otp_email(to_email: str, otp: str) -> bool:
+    subject = "Memory Match Puzzle Password Reset OTP"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #e0e0e0; border-radius: 12px; padding: 30px; color: #444; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <h2 style="color: #007bff; text-align: center; margin-top: 0; margin-bottom: 20px; border-bottom: 1px solid #f0f0f0; padding-bottom: 20px; font-size: 24px;">Password Reset Request</h2>
+        <p style="font-size: 16px; line-height: 1.6;">Hello,</p>
+        <p style="font-size: 16px; line-height: 1.6;">You have requested to reset your password. Your 6-digit OTP is:</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <span style="display: inline-block; padding: 15px 30px; font-size: 32px; font-weight: bold; color: #ffffff; background-color: #007bff; border-radius: 8px; letter-spacing: 5px;">{otp}</span>
+        </div>
+        <p style="font-size: 16px; line-height: 1.6; font-weight: bold; color: #e74c3c;">This code will expire in 10 minutes.</p>
+        <p style="font-size: 16px; line-height: 1.6;">If you did not request this, please ignore this email. Your password will not be changed.</p>
+        <br>
+        <p style="font-size: 15px; color: #666; line-height: 1.5;">Best regards,<br><strong style="color: #222;">{SMTP_FROM_NAME} Team</strong></p>
+    </div>
+    """
+    
+    # Send email without a specific name
+    if BREVO_API_KEY:
+        return _send_via_brevo(to_email, "Player", subject, html)
+    else:
+        return _send_via_smtp(to_email, "Player", subject, html)

@@ -318,6 +318,22 @@ def init_db():
             else:
                 print(f"[DB] Admin account '{admin_username}' already exists.")
 
+            # 15. password_reset_otps table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS `password_reset_otps` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `email` varchar(255) NOT NULL,
+              `otp_hash` varchar(255) NOT NULL,
+              `expires_at` datetime NOT NULL,
+              `is_used` tinyint(1) NOT NULL DEFAULT 0,
+              `attempts` int(11) NOT NULL DEFAULT 0,
+              `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+              `used_at` timestamp NULL DEFAULT NULL,
+              PRIMARY KEY (`id`),
+              KEY `idx_email` (`email`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
             db.commit()
         db.close()
         print("Database initialized successfully.")
