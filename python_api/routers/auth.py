@@ -484,7 +484,7 @@ def request_otp(req: ForgotPasswordRequest):
                 hashed = hash_otp(otp, email)
                 
                 cursor.execute(
-                    "INSERT INTO password_reset_otps (email, otp_hash, expires_at) VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))",
+                    "INSERT INTO password_reset_otps (email, otp_hash, expires_at) VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL 1 MINUTE))",
                     (email, hashed)
                 )
                 db.commit()
