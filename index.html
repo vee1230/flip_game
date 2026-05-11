@@ -2100,6 +2100,8 @@
           saveUsers(users);
           
           setSession(user);
+          showScreen('screen-home');
+          pushHomeState();
         } else {
           err.style.color = '#f87171';
           err.textContent = data.detail || 'Invalid email/username or password.';
@@ -2108,10 +2110,6 @@
         err.style.color = '#f87171';
         err.textContent = 'Network error. Backend might be down.';
       }
-
-      setSession(user);
-      showScreen('screen-home');
-      pushHomeState();
     }
     // ── Google Login (Login tab) — for EXISTING users, signs in directly ──────
     async function doGoogleLogin() {
