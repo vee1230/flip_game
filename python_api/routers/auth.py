@@ -469,7 +469,7 @@ def request_otp(req: ForgotPasswordRequest):
     try:
         with db.cursor() as cursor:
             # Check if email exists
-            cursor.execute("SELECT id FROM players WHERE email=%s AND account_type='manual'", (email,))
+            cursor.execute("SELECT id FROM players WHERE email=%s", (email,))
             user = cursor.fetchone()
             
             # Note: We must always return the same generic message.
