@@ -510,7 +510,7 @@ def verify_otp(req: VerifyOtpRequest):
     try:
         with db.cursor() as cursor:
             cursor.execute(
-                "SELECT id, otp_hash, attempts, is_used, expires_at, NOW() as current_time FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
+                "SELECT id, otp_hash, attempts, is_used, expires_at < NOW() as is_expired FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
                 (email,)
             )
             record = cursor.fetchone()
@@ -518,7 +518,7 @@ def verify_otp(req: VerifyOtpRequest):
             if not record or record["is_used"] or record["attempts"] >= 5:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
-            if record["expires_at"] < record["current_time"]:
+            if record["is_expired"]:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
             if record["otp_hash"] != hashed:
@@ -545,7 +545,7 @@ def reset_password(req: ResetPasswordRequest):
     try:
         with db.cursor() as cursor:
             cursor.execute(
-                "SELECT id, otp_hash, attempts, is_used, expires_at, NOW() as current_time FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
+                "SELECT id, otp_hash, attempts, is_used, expires_at < NOW() as is_expired FROM password_reset_otps WHERE email=%s ORDER BY id DESC LIMIT 1",
                 (email,)
             )
             record = cursor.fetchone()
@@ -553,7 +553,7 @@ def reset_password(req: ResetPasswordRequest):
             if not record or record["is_used"] or record["attempts"] >= 5:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
-            if record["expires_at"] < record["current_time"]:
+            if record["is_expired"]:
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
                 
             if record["otp_hash"] != hashed_otp:
