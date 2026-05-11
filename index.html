@@ -665,7 +665,7 @@
         </div>
         <div class="auth-error" id="fp-error-2" style="color:#f87171; font-size:12px; margin-bottom:10px;"></div>
         <button class="btn-primary" onclick="verifyOtp()" style="width:100%; padding:14px; margin-bottom:10px; border-radius:12px;">Verify OTP</button>
-        <button class="btn-secondary" onclick="requestOtp()" style="width:100%; padding:14px; border-radius:12px;">Resend OTP</button>
+        <button class="btn-secondary" id="btn-resend-otp" onclick="requestOtp()" style="width:100%; padding:14px; border-radius:12px;">Resend OTP</button>
       </div>
 
       <div id="fp-step-3" style="display:none;">
@@ -1904,8 +1904,45 @@
       }, 5000);
     }
     // ===================== FORGOT PASSWORD LOGIC =====================
+    let otpResendTimer = null;
+    function startOtpResendTimer() {
+      const btn = document.getElementById('btn-resend-otp');
+      if (!btn) return;
+      
+      if (otpResendTimer) clearInterval(otpResendTimer);
+      
+      let timeLeft = 60;
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'not-allowed';
+      btn.textContent = `Resend OTP (${timeLeft}s)`;
+      
+      otpResendTimer = setInterval(() => {
+        timeLeft--;
+        if (timeLeft <= 0) {
+          clearInterval(otpResendTimer);
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+          btn.textContent = 'Resend OTP';
+        } else {
+          btn.textContent = `Resend OTP (${timeLeft}s)`;
+        }
+      }, 1000);
+    }
+
     function showForgotPasswordModal(e) {
       if (e) e.preventDefault();
+      if (otpResendTimer) {
+        clearInterval(otpResendTimer);
+        const btn = document.getElementById('btn-resend-otp');
+        if (btn) {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+          btn.textContent = 'Resend OTP';
+        }
+      }
       document.getElementById('fp-step-1').style.display = 'block';
       document.getElementById('fp-step-2').style.display = 'none';
       document.getElementById('fp-step-3').style.display = 'none';
@@ -1945,6 +1982,7 @@
           document.getElementById('fp-step-1').style.display = 'none';
           document.getElementById('fp-step-2').style.display = 'block';
           document.getElementById('fp-msg-2').textContent = 'A 6-digit OTP has been sent to your Gmail.';
+          startOtpResendTimer();
         } else {
           err.textContent = data.detail || 'Failed to request OTP.';
         }
