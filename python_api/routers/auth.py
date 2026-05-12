@@ -484,7 +484,7 @@ def request_otp(req: ForgotPasswordRequest):
                 hashed = hash_otp(otp, email)
                 
                 cursor.execute(
-                    "INSERT INTO password_reset_otps (email, otp_hash, expires_at) VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL 1 MINUTE))",
+                    "INSERT INTO password_reset_otps (email, otp_hash, expires_at) VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))",
                     (email, hashed)
                 )
                 db.commit()
@@ -525,7 +525,14 @@ def verify_otp(req: VerifyOtpRequest):
                 cursor.execute("UPDATE password_reset_otps SET attempts = attempts + 1 WHERE id=%s", (record["id"],))
                 db.commit()
                 raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
-                
+
+            # Mark OTP as used so it cannot be replayed for verification
+            cursor.execute(
+                "UPDATE password_reset_otps SET is_used = 1, used_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (record["id"],)
+            )
+            db.commit()
+
             return {"success": True, "message": "OTP verified successfully."}
     finally:
         db.close()
