@@ -201,7 +201,8 @@ def send_otp_email(to_email: str, otp: str) -> bool:
         <div style="text-align: center; margin: 30px 0;">
             <span style="display: inline-block; padding: 15px 30px; font-size: 32px; font-weight: bold; color: #ffffff; background-color: #007bff; border-radius: 8px; letter-spacing: 5px;">{otp}</span>
         </div>
-        <p style="font-size: 16px; line-height: 1.6; font-weight: bold; color: #e74c3c;">This code will expire in 1 minute.</p>
+        <p style="font-size: 16px; line-height: 1.6; font-weight: bold; color: #e74c3c;">This code will expire in 10 minutes.</p>
+
         <p style="font-size: 16px; line-height: 1.6;">If you did not request this, please ignore this email. Your password will not be changed.</p>
         <br>
         <p style="font-size: 15px; color: #666; line-height: 1.5;">Best regards,<br><strong style="color: #222;">{SMTP_FROM_NAME} Team</strong></p>
